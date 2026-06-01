@@ -18,6 +18,17 @@ standings.
 > on a VPS** against an Android emulator. It ships with a **mock backend** so
 > the whole app runs and the website is fully populated *without* a device.
 
+## 📖 Setup guides
+
+New here? Start with the short, copy-paste guides in **[docs/](docs/)**:
+
+1. **[Quick start](docs/1-QUICKSTART.md)** — run it locally with demo data (~2 min).
+2. **[VPS setup](docs/2-VPS-SETUP.md)** — put it online with login.
+3. **[Connect the game](docs/3-CONNECT-GAME.md)** — point it at a real RoK client + calibrate.
+4. **[Daily use](docs/4-DAILY-USE.md)** — everyday officer cheat sheet.
+
+The rest of this file is the detailed reference.
+
 ---
 
 ## Quick start (no device — mock backend)
