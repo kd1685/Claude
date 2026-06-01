@@ -18,11 +18,13 @@ _thread: threading.Thread | None = None
 _stop = threading.Event()
 
 
-def enqueue(kind: str, *, player_id: int | None = None, params: dict | None = None) -> int:
+def enqueue(kind: str, *, player_id: int | None = None, params: dict | None = None,
+            issued_by: int | None = None, issued_by_name: str | None = None) -> int:
     conn = get_conn()
     cur = conn.execute(
-        "INSERT INTO commands (kind, player_id, params) VALUES (?,?,?)",
-        (kind, player_id, json.dumps(params or {})),
+        "INSERT INTO commands (kind, player_id, params, issued_by, issued_by_name) "
+        "VALUES (?,?,?,?,?)",
+        (kind, player_id, json.dumps(params or {}), issued_by, issued_by_name),
     )
     conn.commit()
     return int(cur.lastrowid)

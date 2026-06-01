@@ -47,7 +47,10 @@ class Config:
     WORKER_INTERVAL: float = float(_get("WORKER_INTERVAL", "3"))
 
     # ---- Control-page auth (data pages stay public) ----
-    CONTROL_PASSWORD: str = _get("CONTROL_PASSWORD", "changeme1685")
+    # First-run bootstrap admin officer. Created only if no users exist yet.
+    ADMIN_USERNAME: str = _get("ADMIN_USERNAME", "admin")
+    # ADMIN_PASSWORD falls back to the legacy CONTROL_PASSWORD for continuity.
+    ADMIN_PASSWORD: str = _get("ADMIN_PASSWORD", "") or _get("CONTROL_PASSWORD", "changeme1685")
     # Secret for signing session cookies. Set a stable value in prod so sessions
     # survive restarts; otherwise a random per-process key is used.
     CONTROL_SECRET: str = _get("CONTROL_SECRET", "") or os.urandom(32).hex()
@@ -57,8 +60,8 @@ class Config:
     CAPTURE_DIR: Path = (ROOT / "captures").resolve()
 
     @property
-    def password_is_default(self) -> bool:
-        return self.CONTROL_PASSWORD == "changeme1685"
+    def admin_password_is_default(self) -> bool:
+        return self.ADMIN_PASSWORD == "changeme1685"
 
 
 config = Config()

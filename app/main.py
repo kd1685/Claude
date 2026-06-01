@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import config
 from .db import init_db
+from . import users
 from .control import worker
 from .api import auth, control, mapdata, players, rallies, scans, stats
 
@@ -18,6 +19,7 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    users.ensure_bootstrap_admin()
     worker.start()
     yield
     worker.stop()

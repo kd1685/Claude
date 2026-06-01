@@ -118,15 +118,18 @@ populate every data page) and grant titles / change ranks / locate governors.
 ### Public on the internet (locked Control)
 
 The data pages (Dashboard, Power/KP, Dead, Rallies, Governors, Map) are
-**public**. The **Control** page — and every `/api/control/*` endpoint — is
-**password-protected**: only people who log in with `CONTROL_PASSWORD` can grant
-titles, change ranks or run scans. Set a real password and (ideally) HTTPS:
+**public**. The **Control** page — and every `/api/control/*` endpoint —
+requires a **per-officer login**: each officer has their own username/password,
+and every title/rank/locate/scan command is recorded against the officer who
+issued it (the queue doubles as an **audit log**). Set the first admin account
+and (ideally) HTTPS:
 
 ```bash
 cd deploy
 cat > .env <<EOF
 SITE_ADDRESS=rok.example.com     # a domain pointed at this VPS (A record)
-CONTROL_PASSWORD=pick-a-strong-one
+ADMIN_USERNAME=yourname
+ADMIN_PASSWORD=pick-a-strong-one
 CONTROL_SECRET=$(openssl rand -hex 32)
 COOKIE_SECURE=true
 EOF
@@ -136,8 +139,13 @@ docker compose up -d
 The included **Caddy** reverse proxy then serves the site at
 `https://rok.example.com` with an automatic Let's Encrypt certificate. Leave
 `SITE_ADDRESS` unset to serve plain HTTP on port 80 instead (fine behind a
-private tunnel/VPN, but use HTTPS for a truly public site). Officers visit
-`/control.html`, enter the password once, and the session is remembered.
+private tunnel/VPN, but use HTTPS for a truly public site).
+
+**Managing officers:** log in to `/control.html` as the admin. An **Officers**
+panel (admins only) lets you add accounts, set `officer` or `admin` roles,
+reset passwords, and disable accounts — disabling takes effect immediately, even
+mid-session. Officers see only the control actions; they cannot manage accounts.
+Passwords are stored as salted PBKDF2 hashes.
 
 > Charts are vendored locally (`web/js/vendor/chart.umd.min.js`) so the site
 > renders with no external CDN.
@@ -163,7 +171,8 @@ sudo cp deploy/rok1685.service /etc/systemd/system/ && sudo systemctl enable --n
 | `KINGDOM_ID` | `1685` | shown in the website header |
 | `DB_PATH` | `data/rok1685.db` | SQLite location |
 | `PORT` / `HOST` | `8000` / `0.0.0.0` | web server |
-| `CONTROL_PASSWORD` | `changeme1685` | password for the Control page — **change it** |
+| `ADMIN_USERNAME` | `admin` | first admin officer (created on first run only) |
+| `ADMIN_PASSWORD` | `changeme1685` | first admin's password — **change it** |
 | `CONTROL_SECRET` | random | stable secret so logins survive restarts |
 | `COOKIE_SECURE` | `false` | set `true` when served over HTTPS |
 | `SITE_ADDRESS` | _(unset)_ | domain for the Caddy proxy → auto-HTTPS (compose only) |

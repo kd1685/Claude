@@ -40,8 +40,10 @@ services:
       KINGDOM_ID: "1685"
       UI_PROFILE: app/profiles/rok_720p.json
       DB_PATH: /data/rok1685.db
-      # Officers-only Control page. CHANGE THIS — set it in deploy/.env.
-      CONTROL_PASSWORD: ${CONTROL_PASSWORD:-changeme1685}
+      # First admin officer (created on first run). CHANGE THIS in deploy/.env.
+      # Add more officers from the Control page once logged in as admin.
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme1685}
       CONTROL_SECRET: ${CONTROL_SECRET:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
     volumes:

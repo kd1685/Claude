@@ -75,18 +75,31 @@ CREATE TABLE IF NOT EXISTS map_positions (
     source       TEXT
 );
 
+-- Officer accounts that can reach the Control page.
+CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'officer',  -- admin | officer
+    active        INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT DEFAULT (datetime('now')),
+    last_login    TEXT
+);
+
 -- Account-control command queue. The worker drains pending rows.
 CREATE TABLE IF NOT EXISTS commands (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    kind         TEXT NOT NULL,                -- give_title | change_rank | locate | scan
-    player_id    INTEGER REFERENCES players(id) ON DELETE SET NULL,
-    params       TEXT,                          -- json
-    status       TEXT DEFAULT 'pending',        -- pending | running | done | failed
-    result       TEXT,
-    error        TEXT,
-    created_at   TEXT DEFAULT (datetime('now')),
-    started_at   TEXT,
-    finished_at  TEXT
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind           TEXT NOT NULL,                -- give_title | change_rank | locate | scan
+    player_id      INTEGER REFERENCES players(id) ON DELETE SET NULL,
+    params         TEXT,                          -- json
+    status         TEXT DEFAULT 'pending',        -- pending | running | done | failed
+    result         TEXT,
+    error          TEXT,
+    issued_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    issued_by_name TEXT,                          -- denormalised for the audit log
+    created_at     TEXT DEFAULT (datetime('now')),
+    started_at     TEXT,
+    finished_at    TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_snapshots_date ON snapshots(captured_at);
@@ -128,7 +141,17 @@ def tx() -> Iterator[sqlite3.Connection]:
 def init_db() -> None:
     conn = get_conn()
     conn.executescript(SCHEMA)
+    _migrate(conn)
     conn.commit()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after the first release to pre-existing DBs."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(commands)")}
+    if "issued_by" not in cols:
+        conn.execute("ALTER TABLE commands ADD COLUMN issued_by INTEGER")
+    if "issued_by_name" not in cols:
+        conn.execute("ALTER TABLE commands ADD COLUMN issued_by_name TEXT")
 
 
 def upsert_player(name: str, governor_id: str | None = None,

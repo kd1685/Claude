@@ -12,9 +12,10 @@
   <p class="sub">Drive the controlling RoK client: grant titles, change alliance ranks, locate governors and run rankings scans. Commands are queued and run one at a time.</p>
 
   <div class="panel" id="loginGate" style="display:none;max-width:420px">
-    <h2>🔒 Restricted</h2>
-    <p class="sub">This page is for kingdom officers only. Enter the control password.</p>
-    <div class="field"><label>Password</label><input id="pw" type="password" placeholder="control password" /></div>
+    <h2>🔒 Officers only</h2>
+    <p class="sub">Sign in with your officer account.</p>
+    <div class="field"><label>Username</label><input id="un" autocomplete="username" placeholder="username" /></div>
+    <div class="field" style="margin-top:8px"><label>Password</label><input id="pw" type="password" autocomplete="current-password" placeholder="password" /></div>
     <button class="primary" style="margin-top:10px" id="loginBtn">Sign in</button>
     <p class="hint" id="loginErr" style="color:var(--red)"></p>
   </div>
@@ -22,6 +23,7 @@
   <div id="app" style="display:none">
   <div class="panel">
     <h2>Backend
+      <span class="muted" id="whoami" style="font-size:12px;font-weight:400"></span>
       <button id="logout" style="float:right;font-size:12px;padding:4px 10px">Sign out</button>
     </h2>
     <div class="row">
@@ -66,10 +68,24 @@
     </div>
   </div>
 
-  <div class="panel">
-    <h2>Command queue <span class="muted" id="qstate" style="font-size:12px"></span></h2>
+  <div class="panel" id="officersPanel" style="display:none">
+    <h2>Officers <span class="muted" style="font-size:12px">· admin only</span></h2>
+    <div class="row" style="align-items:end;margin-bottom:12px">
+      <div class="field"><label>Username</label><input id="o_user" placeholder="new officer" /></div>
+      <div class="field"><label>Password</label><input id="o_pass" type="password" placeholder="temp password" /></div>
+      <div class="field"><label>Role</label><select id="o_role"><option value="officer">Officer</option><option value="admin">Admin</option></select></div>
+      <button class="primary" id="o_add">Add officer</button>
+    </div>
     <table>
-      <thead><tr><th>#</th><th>Action</th><th>Target</th><th>Status</th><th>Result / error</th><th>When</th></tr></thead>
+      <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Last login</th><th>Actions</th></tr></thead>
+      <tbody id="officers"></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>Command queue / audit log <span class="muted" id="qstate" style="font-size:12px"></span></h2>
+    <table>
+      <thead><tr><th>#</th><th>Action</th><th>Target</th><th>By</th><th>Status</th><th>Result / error</th><th>When</th></tr></thead>
       <tbody id="queue"></tbody>
     </table>
   </div>
@@ -99,10 +115,42 @@ async function loadQueue() {
     else if (r.result) { try { res = JSON.parse(r.result).detail || ""; } catch { res = r.result; } }
     return `<tr><td class="muted">${r.id}</td><td>${r.kind}</td>
       <td>${r.player_name || (r.kind==='scan'?'(rankings)':'—')}</td>
+      <td>${r.issued_by_name || "—"}</td>
       <td class="status-${r.status}">${r.status}</td>
       <td class="muted">${res}</td>
       <td class="muted">${(r.finished_at||r.started_at||r.created_at||"").replace("T"," ")}</td></tr>`;
-  }).join("") || `<tr><td colspan="6" class="muted">No commands yet.</td></tr>`;
+  }).join("") || `<tr><td colspan="7" class="muted">No commands yet.</td></tr>`;
+}
+
+async function loadOfficers() {
+  const list = await api("/api/auth/users");
+  document.getElementById("officers").innerHTML = list.map(u => `
+    <tr>
+      <td>${u.username}</td>
+      <td><span class="tag">${u.role}</span></td>
+      <td class="${u.active?'status-done':'status-failed'}">${u.active?'active':'disabled'}</td>
+      <td class="muted">${(u.last_login||'never').replace('T',' ')}</td>
+      <td>
+        <button data-act="toggle" data-id="${u.id}" data-active="${u.active?0:1}" style="font-size:12px;padding:4px 8px">${u.active?'Disable':'Enable'}</button>
+        <button data-act="reset" data-id="${u.id}" style="font-size:12px;padding:4px 8px">Reset pw</button>
+      </td>
+    </tr>`).join("");
+  document.querySelectorAll('#officers button').forEach(b => b.onclick = onOfficerAction);
+}
+
+async function onOfficerAction(e) {
+  const id = e.target.dataset.id;
+  try {
+    if (e.target.dataset.act === "toggle") {
+      await post(`/api/auth/users/${id}/active?active=${e.target.dataset.active}`);
+    } else {
+      const pw = prompt("New password for this officer:");
+      if (!pw) return;
+      await post(`/api/auth/users/${id}/password`, { password: pw });
+      toast("Password reset");
+    }
+    await loadOfficers();
+  } catch (err) { toast("Error: " + err.message); }
 }
 
 async function queued(promise) {
@@ -111,12 +159,19 @@ async function queued(promise) {
 }
 
 let _started = false;
-async function startApp() {
+async function startApp(me) {
   if (_started) return;
   _started = true;
   document.getElementById("loginGate").style.display = "none";
   document.getElementById("app").style.display = "";
-  await Promise.all([loadStatus(), loadPlayers(), loadQueue()]);
+  document.getElementById("whoami").textContent = `· ${me.username} (${me.role})`;
+
+  const tasks = [loadStatus(), loadPlayers(), loadQueue()];
+  if (me.role === "admin") {
+    document.getElementById("officersPanel").style.display = "";
+    tasks.push(loadOfficers());
+  }
+  await Promise.all(tasks);
 
   document.getElementById("connect").onclick = async () => {
     const r = await post("/api/control/connect"); toast(r.detail); loadStatus();
@@ -132,6 +187,18 @@ async function startApp() {
     { player_id: +l_player.value }));
   document.getElementById("s_go").onclick = () => queued(post("/api/control/scan",
     { kind: s_kind.value, pages: +s_pages.value }));
+  document.getElementById("o_add").onclick = async () => {
+    try {
+      await post("/api/auth/users", {
+        username: document.getElementById("o_user").value,
+        password: document.getElementById("o_pass").value,
+        role: document.getElementById("o_role").value,
+      });
+      document.getElementById("o_user").value = "";
+      document.getElementById("o_pass").value = "";
+      toast("Officer added"); await loadOfficers();
+    } catch (e) { toast("Error: " + e.message); }
+  };
 
   setInterval(loadQueue, 3000);
 }
@@ -143,10 +210,13 @@ function showLogin(msg) {
 
 async function doLogin() {
   try {
-    await post("/api/auth/login", { password: document.getElementById("pw").value });
-    await startApp();
+    const r = await post("/api/auth/login", {
+      username: document.getElementById("un").value,
+      password: document.getElementById("pw").value,
+    });
+    await startApp(r);
   } catch (e) {
-    showLogin("Incorrect password.");
+    showLogin("Incorrect username or password.");
   }
 }
 
@@ -156,8 +226,8 @@ async function doLogin() {
   document.getElementById("loginBtn").onclick = doLogin;
   document.getElementById("pw").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
   if (me.authenticated) {
-    await startApp();
-    if (me.default_password) toast("⚠ Using default password — set CONTROL_PASSWORD!");
+    await startApp(me);
+    if (me.default_password) toast("⚠ Admin is using the default password — change it!");
   } else {
     showLogin();
   }

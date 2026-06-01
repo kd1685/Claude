@@ -6,7 +6,8 @@ import time
 # Point the app at a throwaway DB and the mock backend BEFORE importing it.
 os.environ["DB_PATH"] = os.path.join(tempfile.mkdtemp(), "test.db")
 os.environ["CONTROL_BACKEND"] = "mock"
-os.environ["CONTROL_PASSWORD"] = "s3cret"
+os.environ["ADMIN_USERNAME"] = "king"
+os.environ["ADMIN_PASSWORD"] = "s3cret"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -57,18 +58,39 @@ def test_full_flow():
 
         # Control API is locked until we log in (data pages above were public).
         assert client.get("/api/control/status").status_code == 401
-        assert client.post("/api/auth/login", json={"password": "wrong"}).status_code == 401
-        assert client.post("/api/auth/login", json={"password": "s3cret"}).status_code == 200
-        assert client.get("/api/auth/me").json()["authenticated"] is True
+        assert client.post("/api/auth/login",
+                           json={"username": "king", "password": "wrong"}).status_code == 401
+        assert client.post("/api/auth/login",
+                           json={"username": "king", "password": "s3cret"}).status_code == 200
+        me = client.get("/api/auth/me").json()
+        assert me["authenticated"] and me["role"] == "admin"
+
+        # Admin creates a per-officer account; that officer logs in separately.
+        assert client.post("/api/auth/users",
+                           json={"username": "scout", "password": "pw1", "role": "officer"}
+                           ).status_code == 200
+        officer = TestClient(app)
+        assert officer.post("/api/auth/login",
+                            json={"username": "scout", "password": "pw1"}).status_code == 200
+        # Officers cannot manage other officers (admin-only).
+        assert officer.post("/api/auth/users",
+                            json={"username": "x", "password": "y"}).status_code == 403
 
         # Control: mock backend executes via the worker queue.
         st = client.get("/api/control/status").json()
         assert st["backend"] == "mock"
 
         pid = lb["rows"][0]["player_id"]
-        cid = client.post("/api/control/locate", json={"player_id": pid}).json()["command_id"]
+        # The officer issues a command; it must be attributed to them in the log.
+        cid = officer.post("/api/control/locate", json={"player_id": pid}).json()["command_id"]
         cmd = _wait_command(client, cid)
         assert cmd["status"] == "done"
+        assert cmd["issued_by_name"] == "scout"
+
+        # Deactivating the officer revokes access immediately.
+        oid = next(u["id"] for u in client.get("/api/auth/users").json() if u["username"] == "scout")
+        assert client.post(f"/api/auth/users/{oid}/active?active=false").status_code == 200
+        assert officer.get("/api/control/status").status_code == 401
 
         # Locate recorded a map position.
         positions = client.get("/api/map/positions").json()["positions"]
