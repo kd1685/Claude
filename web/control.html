@@ -11,8 +11,19 @@
   <h1>Account Control</h1>
   <p class="sub">Drive the controlling RoK client: grant titles, change alliance ranks, locate governors and run rankings scans. Commands are queued and run one at a time.</p>
 
+  <div class="panel" id="loginGate" style="display:none;max-width:420px">
+    <h2>🔒 Restricted</h2>
+    <p class="sub">This page is for kingdom officers only. Enter the control password.</p>
+    <div class="field"><label>Password</label><input id="pw" type="password" placeholder="control password" /></div>
+    <button class="primary" style="margin-top:10px" id="loginBtn">Sign in</button>
+    <p class="hint" id="loginErr" style="color:var(--red)"></p>
+  </div>
+
+  <div id="app" style="display:none">
   <div class="panel">
-    <h2>Backend</h2>
+    <h2>Backend
+      <button id="logout" style="float:right;font-size:12px;padding:4px 10px">Sign out</button>
+    </h2>
     <div class="row">
       <div class="grow"><pre id="status" class="muted" style="white-space:pre-wrap"></pre></div>
       <div><button class="primary" id="connect">Connect / refresh</button></div>
@@ -62,6 +73,7 @@
       <tbody id="queue"></tbody>
     </table>
   </div>
+  </div><!-- /#app -->
 </main>
 
 <script src="js/common.js"></script>
@@ -98,12 +110,19 @@ async function queued(promise) {
   catch (e) { toast("Error: " + e.message); }
 }
 
-(async () => {
-  await buildHeader("control.html");
+let _started = false;
+async function startApp() {
+  if (_started) return;
+  _started = true;
+  document.getElementById("loginGate").style.display = "none";
+  document.getElementById("app").style.display = "";
   await Promise.all([loadStatus(), loadPlayers(), loadQueue()]);
 
   document.getElementById("connect").onclick = async () => {
     const r = await post("/api/control/connect"); toast(r.detail); loadStatus();
+  };
+  document.getElementById("logout").onclick = async () => {
+    await post("/api/auth/logout"); location.reload();
   };
   document.getElementById("t_go").onclick = () => queued(post("/api/control/give-title",
     { player_id: +t_player.value, title: t_title.value }));
@@ -115,6 +134,33 @@ async function queued(promise) {
     { kind: s_kind.value, pages: +s_pages.value }));
 
   setInterval(loadQueue, 3000);
+}
+
+function showLogin(msg) {
+  document.getElementById("loginGate").style.display = "";
+  if (msg) document.getElementById("loginErr").textContent = msg;
+}
+
+async function doLogin() {
+  try {
+    await post("/api/auth/login", { password: document.getElementById("pw").value });
+    await startApp();
+  } catch (e) {
+    showLogin("Incorrect password.");
+  }
+}
+
+(async () => {
+  await buildHeader("control.html");
+  const me = await api("/api/auth/me").catch(() => ({ authenticated: false }));
+  document.getElementById("loginBtn").onclick = doLogin;
+  document.getElementById("pw").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+  if (me.authenticated) {
+    await startApp();
+    if (me.default_password) toast("⚠ Using default password — set CONTROL_PASSWORD!");
+  } else {
+    showLogin();
+  }
 })();
 </script>
 </body>

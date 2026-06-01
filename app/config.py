@@ -46,7 +46,19 @@ class Config:
 
     WORKER_INTERVAL: float = float(_get("WORKER_INTERVAL", "3"))
 
+    # ---- Control-page auth (data pages stay public) ----
+    CONTROL_PASSWORD: str = _get("CONTROL_PASSWORD", "changeme1685")
+    # Secret for signing session cookies. Set a stable value in prod so sessions
+    # survive restarts; otherwise a random per-process key is used.
+    CONTROL_SECRET: str = _get("CONTROL_SECRET", "") or os.urandom(32).hex()
+    COOKIE_SECURE: bool = _get("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
+    SESSION_TTL: int = int(_get("SESSION_TTL", str(60 * 60 * 24 * 7)))  # 7 days
+
     CAPTURE_DIR: Path = (ROOT / "captures").resolve()
+
+    @property
+    def password_is_default(self) -> bool:
+        return self.CONTROL_PASSWORD == "changeme1685"
 
 
 config = Config()

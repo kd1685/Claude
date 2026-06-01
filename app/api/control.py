@@ -2,14 +2,17 @@
 the queue + backend status."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from ..auth import require_auth
 from ..db import get_conn
 from ..models import (ChangeRankIn, GiveTitleIn, LocateIn, ScanJobIn, TITLES)
 from ..control import get_adapter
 from ..control.worker import enqueue
 
-router = APIRouter(prefix="/api/control", tags=["control"])
+# Every control endpoint requires a valid session (set CONTROL_PASSWORD).
+router = APIRouter(prefix="/api/control", tags=["control"],
+                   dependencies=[Depends(require_auth)])
 
 
 @router.get("/status")

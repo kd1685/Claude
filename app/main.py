@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import config
 from .db import init_db
 from .control import worker
-from .api import control, mapdata, players, rallies, scans, stats
+from .api import auth, control, mapdata, players, rallies, scans, stats
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
@@ -38,8 +38,8 @@ def public_config():
     return {"kingdom": config.KINGDOM_ID, "control_backend": config.CONTROL_BACKEND}
 
 
-for r in (stats.router, players.router, scans.router, control.router,
-          mapdata.router, rallies.router):
+for r in (auth.router, stats.router, players.router, scans.router,
+          control.router, mapdata.router, rallies.router):
     app.include_router(r)
 
 # The website. Mounted last so /api/* routes win. html=True serves index.html.

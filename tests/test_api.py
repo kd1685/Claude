@@ -6,6 +6,7 @@ import time
 # Point the app at a throwaway DB and the mock backend BEFORE importing it.
 os.environ["DB_PATH"] = os.path.join(tempfile.mkdtemp(), "test.db")
 os.environ["CONTROL_BACKEND"] = "mock"
+os.environ["CONTROL_PASSWORD"] = "s3cret"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -53,6 +54,12 @@ def test_full_flow():
         # Kingdom totals + summary.
         assert client.get("/api/stats/kingdom-totals?metric=power&from=2026-05-01&to=2026-05-05").json()["series"]
         assert client.get("/api/stats/summary?date=2026-05-05").json()["governors"] >= 1
+
+        # Control API is locked until we log in (data pages above were public).
+        assert client.get("/api/control/status").status_code == 401
+        assert client.post("/api/auth/login", json={"password": "wrong"}).status_code == 401
+        assert client.post("/api/auth/login", json={"password": "s3cret"}).status_code == 200
+        assert client.get("/api/auth/me").json()["authenticated"] is True
 
         # Control: mock backend executes via the worker queue.
         st = client.get("/api/control/status").json()
