@@ -30,14 +30,20 @@ bash deploy/preflight.sh
   won't. See **[3-CONNECT-GAME.md](3-CONNECT-GAME.md) → "If the emulator won't
   run on your VPS"** for alternatives (KVM host, or point ADB at a real phone).
 
-### Easiest: one-shot installer
+### Easiest: one command on a fresh VPS
 ```bash
 git clone <your-repo-url> rok1685 && cd rok1685
-bash deploy/setup.sh
+sudo bash deploy/activate.sh
 ```
-It runs the preflight, asks for your domain + admin login (a few prompts),
-writes `deploy/.env` (generating the session secret), and starts everything.
-Then skip to **Step 4 — open it**. Prefer to do it by hand? Follow the steps below.
+This installs **Docker**, sets up the **firewall** (allows only SSH/80/443), runs
+the **preflight**, asks for your domain + admin login, writes `deploy/.env`
+(generating the session secret), and **starts everything**. When it finishes,
+skip to **Step 4 — open it**, then do **[3-CONNECT-GAME.md](3-CONNECT-GAME.md)**.
+
+> Already have Docker installed? You can run `bash deploy/setup.sh` instead — it
+> does everything except install Docker / configure the firewall.
+
+Prefer to do each step by hand? Continue below.
 
 ### Step 1 — get the code
 ```bash
