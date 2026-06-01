@@ -88,7 +88,9 @@ temporary password. They'll be forced to set their own password on first login.
 
 ### Handy commands
 ```bash
+bash deploy/update.sh                                      # pull latest code + restart
 docker compose -f deploy/docker-compose.yml logs -f app    # watch app logs
 docker compose -f deploy/docker-compose.yml restart app    # restart app
 docker compose -f deploy/docker-compose.yml down           # stop everything
 ```
+Your data and `deploy/.env` survive updates (they're in Docker volumes / gitignored).

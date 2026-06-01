@@ -22,16 +22,33 @@ dc exec app adb -s android:5555 install /tmp/rok.apk
 ```
 
 ### Step 2 — log into the controlling account
-This is the account that will grant titles / change ranks, so it needs those
-in-game rights (king, or an R4/R5 with the relevant permissions).
+The VPS is headless, so to log the game in you **mirror the emulator's screen to
+your own computer** and click around with your mouse. You only do this once.
 
-To see and tap the screen, use **scrcpy** from your own computer:
+**Which account?** The one that will grant titles / change ranks — it needs
+those in-game rights (king, or an R4/R5). Log it in with a **Lilith Game account
+(email + password)**, not Google/Facebook: redroid has no Google Play Services,
+and an email login is something you can type directly. If your controlling
+account is currently bound only to Google, open RoK on your phone first →
+**Settings → Account** → add a Lilith/email login.
+
+**On your own computer**, install `adb` (Android platform-tools) and
+[`scrcpy`](https://github.com/Genymobile/scrcpy), then reach the VPS emulator
+over a secure SSH tunnel (never expose ADB to the internet):
 ```bash
-# on your computer (not the VPS):
-adb connect YOUR_VPS_IP:5555    # open VPS port 5555 to your IP only, via firewall
-scrcpy
+# 1) tunnel the emulator's ADB port to your computer
+ssh -L 5555:localhost:5555 youruser@YOUR_VPS_IP
+
+# 2) in a second terminal on your computer
+adb connect localhost:5555
+scrcpy                       # opens a window mirroring the emulator
 ```
-Open RoK, log in, and leave it on the **map/city** screen.
+In the scrcpy window: open RoK, log in with the email account, clear any
+first-run prompts, and leave it on the **map/city** screen. It stays logged in;
+close scrcpy when done — the bot keeps running on the VPS.
+
+> If `adb connect` shows "offline", give the emulator a minute after boot, then
+> `adb disconnect && adb connect localhost:5555`.
 
 ### Step 3 — calibrate the tap coordinates
 Take a screenshot and read pixel positions from it:
