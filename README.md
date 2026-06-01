@@ -145,7 +145,9 @@ private tunnel/VPN, but use HTTPS for a truly public site).
 panel (admins only) lets you add accounts, set `officer` or `admin` roles,
 reset passwords, and disable accounts — disabling takes effect immediately, even
 mid-session. Officers see only the control actions; they cannot manage accounts.
-Passwords are stored as salted PBKDF2 hashes.
+Every officer (admin or not) can change their **own** password from the
+**My account** panel on the Control page. Passwords are stored as salted PBKDF2
+hashes.
 
 > Charts are vendored locally (`web/js/vendor/chart.umd.min.js`) so the site
 > renders with no external CDN.

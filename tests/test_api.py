@@ -87,6 +87,20 @@ def test_full_flow():
         assert cmd["status"] == "done"
         assert cmd["issued_by_name"] == "scout"
 
+        # Self-service password change: wrong current pw rejected, then changed.
+        assert officer.post("/api/auth/change-password",
+                            json={"current_password": "nope", "new_password": "brandnew"}
+                            ).status_code == 400
+        assert officer.post("/api/auth/change-password",
+                            json={"current_password": "pw1", "new_password": "brandnew"}
+                            ).status_code == 200
+        # Old password no longer works; new one does.
+        fresh = TestClient(app)
+        assert fresh.post("/api/auth/login",
+                          json={"username": "scout", "password": "pw1"}).status_code == 401
+        assert fresh.post("/api/auth/login",
+                          json={"username": "scout", "password": "brandnew"}).status_code == 200
+
         # Deactivating the officer revokes access immediately.
         oid = next(u["id"] for u in client.get("/api/auth/users").json() if u["username"] == "scout")
         assert client.post(f"/api/auth/users/{oid}/active?active=false").status_code == 200

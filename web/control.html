@@ -68,6 +68,18 @@
     </div>
   </div>
 
+  <div class="panel" style="max-width:520px">
+    <h2>My account</h2>
+    <p class="sub">Change your own password.</p>
+    <div class="row" style="align-items:end">
+      <div class="field"><label>Current password</label><input id="cp_cur" type="password" autocomplete="current-password" /></div>
+      <div class="field"><label>New password</label><input id="cp_new" type="password" autocomplete="new-password" /></div>
+      <div class="field"><label>Confirm</label><input id="cp_conf" type="password" autocomplete="new-password" /></div>
+      <button class="primary" id="cp_go">Update</button>
+    </div>
+    <p class="hint" id="cp_msg"></p>
+  </div>
+
   <div class="panel" id="officersPanel" style="display:none">
     <h2>Officers <span class="muted" style="font-size:12px">· admin only</span></h2>
     <div class="row" style="align-items:end;margin-bottom:12px">
@@ -178,6 +190,24 @@ async function startApp(me) {
   };
   document.getElementById("logout").onclick = async () => {
     await post("/api/auth/logout"); location.reload();
+  };
+  document.getElementById("cp_go").onclick = async () => {
+    const msg = document.getElementById("cp_msg");
+    const cur = document.getElementById("cp_cur").value;
+    const nw = document.getElementById("cp_new").value;
+    const conf = document.getElementById("cp_conf").value;
+    msg.style.color = "var(--red)";
+    if (nw !== conf) { msg.textContent = "New passwords do not match."; return; }
+    try {
+      await post("/api/auth/change-password", { current_password: cur, new_password: nw });
+      msg.style.color = "var(--green)"; msg.textContent = "Password updated.";
+      ["cp_cur","cp_new","cp_conf"].forEach(id => document.getElementById(id).value = "");
+      toast("Password updated");
+    } catch (e) {
+      let m = e.message.replace(/^\d+:\s*/, "");
+      try { m = JSON.parse(m).detail || m; } catch {}
+      msg.textContent = m;
+    }
   };
   document.getElementById("t_go").onclick = () => queued(post("/api/control/give-title",
     { player_id: +t_player.value, title: t_title.value }));

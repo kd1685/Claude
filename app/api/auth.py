@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from .. import users
-from ..auth import COOKIE, current_user, make_token, require_admin
+from ..auth import COOKIE, current_user, make_token, require_admin, require_auth
 from ..config import config
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -24,6 +24,11 @@ class UserIn(BaseModel):
 
 class PasswordIn(BaseModel):
     password: str
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
 
 
 @router.post("/login")
@@ -57,6 +62,25 @@ def me(request: Request):
         # Warn the admin while the seeded admin password is still the default.
         "default_password": user["role"] == "admin" and config.admin_password_is_default,
     }
+
+
+# ---- self-service (any logged-in officer) ----
+
+@router.post("/change-password")
+def change_password(body: ChangePasswordIn, response: Response, user=Depends(require_auth)):
+    if not users.verify_password(body.current_password, user["password_hash"]):
+        raise HTTPException(400, "current password is incorrect")
+    if len(body.new_password) < 6:
+        raise HTTPException(400, "new password must be at least 6 characters")
+    if body.new_password == body.current_password:
+        raise HTTPException(400, "new password must differ from the current one")
+    users.set_password(user["id"], body.new_password)
+    # Re-issue the session so the cookie stays valid after the change.
+    response.set_cookie(
+        COOKIE, make_token(user), max_age=config.SESSION_TTL,
+        httponly=True, samesite="lax", secure=config.COOKIE_SECURE, path="/",
+    )
+    return {"ok": True}
 
 
 # ---- admin-only officer management ----
