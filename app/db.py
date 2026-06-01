@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS rotation_members (
 CREATE TABLE IF NOT EXISTS scan_schedules (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     kind          TEXT NOT NULL,                 -- power | killpoints | dead
-    at_hour       INTEGER NOT NULL,              -- 0..23 (server local time)
+    at_hour       INTEGER NOT NULL,              -- 0..23 (UTC)
     at_minute     INTEGER NOT NULL DEFAULT 0,
     pages         INTEGER NOT NULL DEFAULT 4,
     active        INTEGER NOT NULL DEFAULT 1,

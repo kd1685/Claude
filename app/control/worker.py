@@ -75,8 +75,8 @@ def _process_one() -> bool:
 
 
 def _check_schedules() -> None:
-    """Enqueue automatic scans for any schedule that is due today."""
-    now = dt.datetime.now()
+    """Enqueue automatic scans for any schedule that is due today (UTC)."""
+    now = dt.datetime.utcnow()
     today = now.date().isoformat()
     conn = get_conn()
     for s in conn.execute("SELECT * FROM scan_schedules WHERE active=1").fetchall():

@@ -97,12 +97,12 @@
     <h2>Automatic scans <span class="muted" style="font-size:12px">· admin only</span></h2>
     <div class="row" style="align-items:end;margin-bottom:12px">
       <div class="field"><label>Ranking</label><select id="sc_kind"><option value="power">Power</option><option value="killpoints">Kill Points</option><option value="dead">Dead</option></select></div>
-      <div class="field"><label>Time (24h)</label><input id="sc_time" type="time" value="02:00" /></div>
+      <div class="field"><label>Time (UTC)</label><input id="sc_time" type="time" value="02:00" /></div>
       <div class="field"><label>Pages</label><input id="sc_pages" type="number" value="4" min="1" max="50" style="width:90px" /></div>
       <button class="primary" id="sc_add">Add schedule</button>
     </div>
     <table>
-      <thead><tr><th>Ranking</th><th>Time</th><th>Pages</th><th>Status</th><th>Last run</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Ranking</th><th>Time (UTC)</th><th>Pages</th><th>Status</th><th>Last run</th><th>Actions</th></tr></thead>
       <tbody id="schedules"></tbody>
     </table>
   </div>

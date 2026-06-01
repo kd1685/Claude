@@ -200,7 +200,8 @@ sudo cp deploy/rok1685.service /etc/systemd/system/ && sudo systemctl enable --n
   rotations and change ranks — **except promoting to R5 (kingdom leader), which
   is admin-only**. The UI hides what your role can't do; the server enforces it.
 * **Automatic scans.** Admins can schedule daily rankings scans (e.g. Power at
-  02:00); the worker enqueues them when due.
+  02:00 **UTC**); the worker enqueues them when due. Times are always UTC, so
+  they behave the same regardless of the VPS timezone.
 * **KvK DKP rankings** (`/dkp.html`). Points from T4/T5 kills + deads *gained*
   over an event window, each weighted (defaults T4×1, T5×2, deads×5). Pick a
   saved **event** or a custom range.
