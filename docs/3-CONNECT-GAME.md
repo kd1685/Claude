@@ -57,16 +57,25 @@ dc exec app python -m scripts.calibrate screenshot   # saves captures/calibrate.
 dc cp app:/app/captures/calibrate.png ./calibrate.png # copy it out to view
 dc exec app python -m scripts.calibrate tap 640 360   # test-tap a point
 ```
-Open `calibrate.png`, read the x,y of each button, and edit
-`app/profiles/rok_720p.json`:
+**Pick the profile that matches your emulator resolution** (set `UI_PROFILE` in
+`deploy/.env`):
+- **1280×720** → `app/profiles/rok_720p.json` (default; redroid uses 720p in the
+  compose file)
+- **1920×1080** → `app/profiles/rok_1080p.json`
+
+```bash
+# in deploy/.env — only if your emulator runs at 1080p
+UI_PROFILE=app/profiles/rok_1080p.json
+```
+
+Open `calibrate.png`, read the x,y of each button, and edit that profile:
 - **anchors** — the tap points (search button, title buttons, rank buttons, the
   rankings tabs, alliance/members buttons …).
 - **rankings.rows** — the screen regions where each ranking row's name and value
   appear (for OCR).
 
-The file has comments explaining each field. The defaults are for a **1280×720**
-client — set redroid to that resolution (it is by default in the compose file)
-to minimise changes.
+Both profiles are sensible starting points, not pixel-perfect — calibrate
+against your own screenshot. The 1080p profile is the 720p one scaled ×1.5.
 
 Restart the app after editing so it reloads the profile:
 ```bash

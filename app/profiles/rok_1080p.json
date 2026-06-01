@@ -1,0 +1,360 @@
+{
+  "name": "rok_1080p",
+  "_comment": [
+    "Calibration profile for a 1920x1080 LANDSCAPE Rise of Kingdoms client.",
+    "Auto-scaled x1.5 from the 720p profile as a starting point \u2014 STILL calibrate",
+    "against your own screenshot (scripts/calibrate.py). OCR 'region' is [x,y,w,h]."
+  ],
+  "screen": {
+    "width": 1920,
+    "height": 1080
+  },
+  "anchors": {
+    "search_button": [
+      72,
+      705
+    ],
+    "search_field": [
+      960,
+      180
+    ],
+    "first_result": [
+      960,
+      330
+    ],
+    "coords_readout": [
+      1635,
+      42
+    ],
+    "city_center": [
+      960,
+      540
+    ],
+    "city_title_icon": [
+      840,
+      450
+    ],
+    "title_justice": [
+      705,
+      645
+    ],
+    "title_duke": [
+      870,
+      645
+    ],
+    "title_architect": [
+      1035,
+      645
+    ],
+    "title_scientist": [
+      1200,
+      645
+    ],
+    "rankings_button": [
+      1770,
+      375
+    ],
+    "tab_power": [
+      645,
+      225
+    ],
+    "tab_killpoints": [
+      960,
+      225
+    ],
+    "tab_dead": [
+      1275,
+      225
+    ],
+    "alliance_button": [
+      1770,
+      540
+    ],
+    "alliance_members": [
+      270,
+      300
+    ],
+    "member_search": [
+      960,
+      225
+    ],
+    "first_member": [
+      600,
+      375
+    ],
+    "member_manage": [
+      1350,
+      375
+    ],
+    "rank_r1": [
+      750,
+      450
+    ],
+    "rank_r2": [
+      750,
+      540
+    ],
+    "rank_r3": [
+      750,
+      630
+    ],
+    "rank_r4": [
+      750,
+      720
+    ],
+    "rank_r5": [
+      750,
+      810
+    ]
+  },
+  "macros": {
+    "locate_player": [
+      {
+        "tap": "search_button"
+      },
+      {
+        "wait": 800
+      },
+      {
+        "tap": "search_field"
+      },
+      {
+        "wait": 400
+      },
+      {
+        "text": "{name}"
+      },
+      {
+        "key": 66
+      },
+      {
+        "wait": 1500
+      },
+      {
+        "tap": "first_result"
+      },
+      {
+        "wait": 2500
+      },
+      {
+        "ocr": {
+          "region": [
+            1500,
+            18,
+            360,
+            51
+          ],
+          "into": "coords",
+          "pattern": "(\\d+)\\s*[,Xx: ]+\\s*(\\d+)",
+          "groups": {
+            "x": 1,
+            "y": 2
+          }
+        }
+      }
+    ],
+    "give_title": [
+      {
+        "tap": "city_center"
+      },
+      {
+        "wait": 1200
+      },
+      {
+        "tap": "city_title_icon"
+      },
+      {
+        "wait": 1000
+      },
+      {
+        "tap_var": "title_point"
+      },
+      {
+        "wait": 800
+      },
+      {
+        "back": true
+      },
+      {
+        "wait": 400
+      },
+      {
+        "back": true
+      }
+    ],
+    "change_rank": [
+      {
+        "tap": "alliance_button"
+      },
+      {
+        "wait": 1200
+      },
+      {
+        "tap": "alliance_members"
+      },
+      {
+        "wait": 1000
+      },
+      {
+        "tap": "member_search"
+      },
+      {
+        "text": "{name}"
+      },
+      {
+        "key": 66
+      },
+      {
+        "wait": 1500
+      },
+      {
+        "tap": "first_member"
+      },
+      {
+        "wait": 1000
+      },
+      {
+        "tap": "member_manage"
+      },
+      {
+        "wait": 800
+      },
+      {
+        "tap_var": "rank_point"
+      },
+      {
+        "wait": 800
+      },
+      {
+        "back": true
+      },
+      {
+        "wait": 400
+      },
+      {
+        "back": true
+      }
+    ],
+    "open_rankings": [
+      {
+        "tap": "rankings_button"
+      },
+      {
+        "wait": 1500
+      },
+      {
+        "tap_var": "tab_point"
+      },
+      {
+        "wait": 1200
+      }
+    ],
+    "close_rankings": [
+      {
+        "back": true
+      },
+      {
+        "wait": 400
+      },
+      {
+        "back": true
+      }
+    ]
+  },
+  "rankings": {
+    "_comment": "Per-visible-row OCR regions [x,y,w,h] for name + value, plus a scroll gesture.",
+    "scroll": [
+      960,
+      900,
+      960,
+      375,
+      700
+    ],
+    "rows": [
+      {
+        "name": [
+          495,
+          252,
+          540,
+          66
+        ],
+        "value": [
+          1350,
+          252,
+          480,
+          66
+        ]
+      },
+      {
+        "name": [
+          495,
+          348,
+          540,
+          66
+        ],
+        "value": [
+          1350,
+          348,
+          480,
+          66
+        ]
+      },
+      {
+        "name": [
+          495,
+          444,
+          540,
+          66
+        ],
+        "value": [
+          1350,
+          444,
+          480,
+          66
+        ]
+      },
+      {
+        "name": [
+          495,
+          540,
+          540,
+          66
+        ],
+        "value": [
+          1350,
+          540,
+          480,
+          66
+        ]
+      },
+      {
+        "name": [
+          495,
+          636,
+          540,
+          66
+        ],
+        "value": [
+          1350,
+          636,
+          480,
+          66
+        ]
+      },
+      {
+        "name": [
+          495,
+          732,
+          540,
+          66
+        ],
+        "value": [
+          1350,
+          732,
+          480,
+          66
+        ]
+      }
+    ]
+  }
+}
