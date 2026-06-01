@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kingdom 1685 — Audit Log</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+<main>
+  <h1>Audit Log</h1>
+  <p class="sub">Every control action — titles, ranks, locates, scans and rotations — with the officer who issued it.</p>
+
+  <div id="gate" class="panel" style="display:none">
+    <h2>🔒 Sign in required</h2>
+    <p class="sub">The audit log is for officers. <a href="control.html">Sign in on the Control page</a>, then come back.</p>
+  </div>
+
+  <div id="content" style="display:none">
+    <div class="toolbar">
+      <div class="field"><label>Action</label>
+        <select id="kind"><option value="">All</option><option>give_title</option><option>change_rank</option><option>locate</option><option>scan</option></select>
+      </div>
+      <div class="field"><label>Officer</label><input id="officer" placeholder="username" /></div>
+      <div class="field"><label>From</label><input type="date" id="from" /></div>
+      <div class="field"><label>To</label><input type="date" id="to" /></div>
+      <button class="primary" id="go">Filter</button>
+      <button id="csv">⬇ Export CSV</button>
+    </div>
+
+    <div class="panel">
+      <table>
+        <thead><tr><th>#</th><th>Action</th><th>Target</th><th>By</th><th>Status</th><th>Detail</th><th>When</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script src="js/common.js"></script>
+<script>
+function qs() {
+  const p = new URLSearchParams();
+  const k = kind.value, o = officer.value.trim(), f = from.value, t = to.value;
+  if (k) p.set("kind", k);
+  if (o) p.set("officer", o);
+  if (f) p.set("from", f);
+  if (t) p.set("to", t);
+  return p.toString();
+}
+
+async function load() {
+  const rows = await api(`/api/control/commands?limit=500&${qs()}`);
+  document.getElementById("rows").innerHTML = rows.map(r => {
+    let detail = "—";
+    if (r.error) detail = r.error;
+    else if (r.result) { try { detail = JSON.parse(r.result).detail || ""; } catch { detail = r.result; } }
+    return `<tr><td class="muted">${r.id}</td><td>${r.kind}</td>
+      <td>${r.player_name || (r.kind==='scan'?'(rankings)':'—')}</td>
+      <td>${r.issued_by_name || "—"}</td>
+      <td class="status-${r.status}">${r.status}</td>
+      <td class="muted">${detail}</td>
+      <td class="muted">${(r.created_at||"").replace("T"," ")}</td></tr>`;
+  }).join("") || `<tr><td colspan="7" class="muted">No matching actions.</td></tr>`;
+}
+
+(async () => {
+  await buildHeader("audit.html");
+  const me = await api("/api/auth/me").catch(() => ({ authenticated: false }));
+  if (!me.authenticated) { document.getElementById("gate").style.display = ""; return; }
+  document.getElementById("content").style.display = "";
+  document.getElementById("go").onclick = load;
+  document.getElementById("csv").onclick = () => { location.href = `/api/control/commands.csv?${qs()}`; };
+  await load();
+})();
+</script>
+</body>
+</html>

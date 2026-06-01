@@ -4,10 +4,12 @@ const PAGES = [
   ["index.html", "Dashboard"],
   ["kp.html", "Power & KP"],
   ["dead.html", "Dead Troops"],
+  ["dkp.html", "KvK DKP"],
   ["rallies.html", "Rallies"],
   ["players.html", "Governors"],
   ["map.html", "Map"],
   ["control.html", "Control"],
+  ["audit.html", "Audit"],
 ];
 
 async function api(path, opts) {

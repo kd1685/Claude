@@ -114,6 +114,69 @@ def kingdom_totals(
             "series": [dict(r) for r in rows]}
 
 
+@router.get("/dkp")
+def dkp(
+    frm: str | None = Query(default=None, alias="from"),
+    to: str | None = None,
+    w_t4: float = 1.0,
+    w_t5: float = 2.0,
+    w_dead: float = 5.0,
+    limit: int = 200,
+):
+    """KvK-style DKP leaderboard: points from T4/T5 kills + deads *gained*
+    between two dates, each weighted. Defaults: T4×1, T5×2, deads×5."""
+    to = to or dt.date.today().isoformat()
+    frm = frm or (dt.date.fromisoformat(to) - dt.timedelta(days=14)).isoformat()
+    conn = get_conn()
+    players = conn.execute("SELECT id, name, alliance FROM players").fetchall()
+    out = []
+    for p in players:
+        parts = {}
+        for col, w in (("t4_kills", w_t4), ("t5_kills", w_t5), ("deads", w_dead)):
+            end = _value_at(conn, p["id"], col, to)
+            start = _value_at(conn, p["id"], col, frm)
+            parts[col] = (end - start) if (end is not None and start is not None) else 0
+        score = parts["t4_kills"] * w_t4 + parts["t5_kills"] * w_t5 + parts["deads"] * w_dead
+        if score <= 0:
+            continue
+        out.append({"player_id": p["id"], "name": p["name"], "alliance": p["alliance"],
+                    "dkp": round(score), "t4_gain": parts["t4_kills"],
+                    "t5_gain": parts["t5_kills"], "dead_gain": parts["deads"]})
+    out.sort(key=lambda d: d["dkp"], reverse=True)
+    out = out[:limit]
+    for i, item in enumerate(out, 1):
+        item["position"] = i
+    return {"from": frm, "to": to,
+            "weights": {"t4": w_t4, "t5": w_t5, "dead": w_dead}, "rows": out}
+
+
+@router.get("/alerts")
+def alerts(
+    frm: str | None = Query(default=None, alias="from"),
+    to: str | None = None,
+    power_drop: int = 1_000_000,
+    dead_spike: int = 500_000,
+):
+    """Governors whose power dropped (possible quit/migration) or whose deads
+    spiked, between two dates."""
+    to = to or dt.date.today().isoformat()
+    frm = frm or (dt.date.fromisoformat(to) - dt.timedelta(days=7)).isoformat()
+    conn = get_conn()
+    drops, spikes = [], []
+    for p in conn.execute("SELECT id, name, alliance FROM players").fetchall():
+        p_end, p_start = _value_at(conn, p["id"], "power", to), _value_at(conn, p["id"], "power", frm)
+        if p_end is not None and p_start is not None and (p_start - p_end) >= power_drop:
+            drops.append({"player_id": p["id"], "name": p["name"], "alliance": p["alliance"],
+                          "lost": p_start - p_end})
+        d_end, d_start = _value_at(conn, p["id"], "deads", to), _value_at(conn, p["id"], "deads", frm)
+        if d_end is not None and d_start is not None and (d_end - d_start) >= dead_spike:
+            spikes.append({"player_id": p["id"], "name": p["name"], "alliance": p["alliance"],
+                           "gained": d_end - d_start})
+    drops.sort(key=lambda d: d["lost"], reverse=True)
+    spikes.sort(key=lambda d: d["gained"], reverse=True)
+    return {"from": frm, "to": to, "power_drops": drops[:50], "dead_spikes": spikes[:50]}
+
+
 @router.get("/summary")
 def summary(date: str | None = None):
     """Headline numbers for the dashboard at a given date."""

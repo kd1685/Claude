@@ -96,3 +96,16 @@ def require_admin(request: Request):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="admin privileges required")
     return user
+
+
+def require_action(action: str):
+    """Dependency factory: logged-in, ready, and permitted for `action`."""
+    from . import permissions
+
+    def dep(request: Request):
+        user = require_ready(request)
+        if not permissions.can(user["role"], action):
+            raise HTTPException(status_code=403, detail=f"{action} requires a higher role")
+        return user
+
+    return dep

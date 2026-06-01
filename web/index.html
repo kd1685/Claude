@@ -35,6 +35,19 @@
     <div style="height:280px"><canvas id="powerChart"></canvas></div>
   </div>
 
+  <div class="row">
+    <div class="panel grow">
+      <h2>⚠ Power drops <span class="muted" style="font-size:12px">· last 7 days</span></h2>
+      <table><thead><tr><th>Governor</th><th>Alliance</th><th class="num">Power lost</th></tr></thead>
+        <tbody id="drops"></tbody></table>
+    </div>
+    <div class="panel grow">
+      <h2>🔥 Dead-troop spikes <span class="muted" style="font-size:12px">· last 7 days</span></h2>
+      <table><thead><tr><th>Governor</th><th>Alliance</th><th class="num">Deads gained</th></tr></thead>
+        <tbody id="spikes"></tbody></table>
+    </div>
+  </div>
+
   <div class="panel">
     <h2>Top 10 by power</h2>
     <table>
@@ -66,6 +79,18 @@ async function load() {
 
   lineChart("powerChart", totals.series.map(s => s.captured_at),
     [{ label: "Total power", data: totals.series.map(s => s.total), borderColor: "#e7b94e", backgroundColor: "rgba(231,185,78,.12)", fill: true }]);
+
+  const al = await api(`/api/stats/alerts?to=${date}`).catch(() => ({ power_drops: [], dead_spikes: [] }));
+  document.getElementById("drops").innerHTML = al.power_drops.map(r => `
+    <tr><td><a href="players.html?id=${r.player_id}">${r.name}</a></td>
+        <td><span class="tag">${r.alliance||"—"}</span></td>
+        <td class="num gain-neg">-${fmt(r.lost)}</td></tr>`).join("")
+    || `<tr><td colspan="3" class="muted">None.</td></tr>`;
+  document.getElementById("spikes").innerHTML = al.dead_spikes.map(r => `
+    <tr><td><a href="players.html?id=${r.player_id}">${r.name}</a></td>
+        <td><span class="tag">${r.alliance||"—"}</span></td>
+        <td class="num">${fmt(r.gained)}</td></tr>`).join("")
+    || `<tr><td colspan="3" class="muted">None.</td></tr>`;
 
   document.getElementById("top").innerHTML = board.rows.map(r => `
     <tr><td class="pos">${r.position}</td>

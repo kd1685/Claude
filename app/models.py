@@ -57,3 +57,23 @@ class LocateIn(BaseModel):
 class ScanJobIn(BaseModel):
     kind: str = Field(default="power", description="power | killpoints | dead")
     pages: int = Field(default=4, ge=1, le=50, description="rankings pages to scroll")
+
+
+class RotationIn(BaseModel):
+    title: str = Field(description="Justice | Duke | Architect | Scientist")
+    player_ids: list[int] = Field(description="governors to cycle, in order")
+    hold_seconds: int = Field(default=180, ge=0, le=3600,
+                              description="seconds each governor holds the title")
+
+
+class ScheduleIn(BaseModel):
+    kind: str = Field(description="power | killpoints | dead")
+    at_hour: int = Field(ge=0, le=23)
+    at_minute: int = Field(default=0, ge=0, le=59)
+    pages: int = Field(default=4, ge=1, le=50)
+
+
+class EventIn(BaseModel):
+    name: str
+    start_date: str = Field(description="YYYY-MM-DD")
+    end_date: str = Field(description="YYYY-MM-DD")

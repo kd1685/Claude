@@ -103,11 +103,61 @@ CREATE TABLE IF NOT EXISTS commands (
     finished_at    TEXT
 );
 
+-- Bulk "title duty" rotations: hand a title to each member in turn, holding it
+-- for `hold_seconds` before advancing. Exclusive: nothing else uses the client
+-- while a rotation runs.
+CREATE TABLE IF NOT EXISTS rotations (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    title         TEXT NOT NULL,                 -- Justice | Duke | Architect | Scientist
+    hold_seconds  INTEGER NOT NULL DEFAULT 180,
+    status        TEXT NOT NULL DEFAULT 'running', -- running | done | cancelled
+    issued_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    issued_by_name TEXT,
+    created_at    TEXT DEFAULT (datetime('now')),
+    finished_at   TEXT
+);
+
+CREATE TABLE IF NOT EXISTS rotation_members (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    rotation_id   INTEGER NOT NULL REFERENCES rotations(id) ON DELETE CASCADE,
+    player_id     INTEGER REFERENCES players(id) ON DELETE SET NULL,
+    player_name   TEXT,
+    position      INTEGER NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'waiting', -- waiting | active | done | skipped | failed
+    error         TEXT,
+    started_at    TEXT,
+    finished_at   TEXT
+);
+
+-- Recurring daily rankings scans run automatically by the worker.
+CREATE TABLE IF NOT EXISTS scan_schedules (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind          TEXT NOT NULL,                 -- power | killpoints | dead
+    at_hour       INTEGER NOT NULL,              -- 0..23 (server local time)
+    at_minute     INTEGER NOT NULL DEFAULT 0,
+    pages         INTEGER NOT NULL DEFAULT 4,
+    active        INTEGER NOT NULL DEFAULT 1,
+    last_run_date TEXT,
+    created_by    TEXT,
+    created_at    TEXT DEFAULT (datetime('now'))
+);
+
+-- Named event windows (KvK, Ark, etc.) for DKP-style scoped rankings.
+CREATE TABLE IF NOT EXISTS events (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL,
+    start_date    TEXT NOT NULL,
+    end_date      TEXT NOT NULL,
+    created_by    TEXT,
+    created_at    TEXT DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_snapshots_date ON snapshots(captured_at);
 CREATE INDEX IF NOT EXISTS idx_snapshots_player ON snapshots(player_id);
 CREATE INDEX IF NOT EXISTS idx_rallies_date ON rallies(captured_at);
 CREATE INDEX IF NOT EXISTS idx_map_date ON map_positions(captured_at);
 CREATE INDEX IF NOT EXISTS idx_commands_status ON commands(status);
+CREATE INDEX IF NOT EXISTS idx_rotmembers ON rotation_members(rotation_id, position);
 """
 
 

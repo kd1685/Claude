@@ -8,6 +8,7 @@ os.environ["DB_PATH"] = os.path.join(tempfile.mkdtemp(), "test.db")
 os.environ["CONTROL_BACKEND"] = "mock"
 os.environ["ADMIN_USERNAME"] = "king"
 os.environ["ADMIN_PASSWORD"] = "s3cret"
+os.environ["WORKER_INTERVAL"] = "0.2"   # fast loop so rotation steps quickly in tests
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -139,3 +140,64 @@ def test_full_flow():
         # Scan command ingests rows from the mock adapter.
         cid = client.post("/api/control/scan", json={"kind": "killpoints", "pages": 2}).json()["command_id"]
         assert _wait_command(client, cid)["status"] == "done"
+
+        _advanced(client)
+
+
+def _advanced(client):
+    """Rotation, per-action permissions, audit CSV, force-change, DKP."""
+    # Two governors to rotate over.
+    ids = [r["id"] for r in client.get("/api/players").json()[:2]]
+    assert len(ids) == 2
+
+    # Bulk title rotation with a 0s hold (so it completes fast in tests).
+    rid = client.post("/api/control/rotation",
+                      json={"title": "Duke", "player_ids": ids, "hold_seconds": 0}
+                      ).json()["rotation_id"]
+    for _ in range(60):
+        active = client.get("/api/control/rotation/active").json()
+        if active.get("rotation") is None or active["rotation"]["status"] != "running":
+            break
+        time.sleep(0.2)
+    rot = next(r for r in client.get("/api/control/rotations").json() if r["id"] == rid)
+    assert rot["status"] == "done"
+    # A second rotation cannot start while one runs is moot now; both members granted.
+    log = client.get("/api/control/commands?kind=give_title&limit=100").json()
+    assert sum(1 for c in log if c["status"] == "done") >= 2
+
+    # Per-action permissions: a plain officer can rank to R4 but not R5.
+    client.post("/api/auth/users", json={"username": "duty", "password": "tmp12345"})
+    duty = TestClient(app)
+    duty.post("/api/auth/login", json={"username": "duty", "password": "tmp12345"})
+    duty.post("/api/auth/change-password",
+              json={"current_password": "tmp12345", "new_password": "dutyreal1"})
+    assert duty.post("/api/control/change-rank",
+                     json={"player_id": ids[0], "new_rank": 5}).status_code == 403
+    assert duty.post("/api/control/change-rank",
+                     json={"player_id": ids[0], "new_rank": 4}).status_code == 200
+    # The officer's permission map hides R5.
+    perms = duty.get("/api/control/status").json()["permissions"]
+    assert perms["change_rank"] is True and perms["change_rank_r5"] is False
+
+    # Force-change toggle (no password reset) takes effect on next request.
+    did = next(u["id"] for u in client.get("/api/auth/users").json() if u["username"] == "duty")
+    assert client.post(f"/api/auth/users/{did}/force-change").status_code == 200
+    assert duty.get("/api/control/status").status_code == 403  # now must change
+
+    # Audit CSV export.
+    csv_res = client.get("/api/control/commands.csv")
+    assert csv_res.status_code == 200 and "text/csv" in csv_res.headers["content-type"]
+    assert csv_res.text.splitlines()[0].startswith("id,kind,player")
+
+    # DKP endpoint responds with a sorted structure.
+    dkp = client.get("/api/stats/dkp?from=2026-05-01&to=2026-05-05").json()
+    assert "rows" in dkp and dkp["weights"]["dead"] == 5.0
+
+    # Schedules + events CRUD (admin).
+    sid = client.post("/api/schedules",
+                      json={"kind": "power", "at_hour": 2, "at_minute": 30}).json()["id"]
+    assert any(s["id"] == sid for s in client.get("/api/schedules").json())
+    eid = client.post("/api/events",
+                      json={"name": "KvK1", "start_date": "2026-05-01", "end_date": "2026-05-20"}
+                      ).json()["id"]
+    assert any(e["id"] == eid for e in client.get("/api/events").json())

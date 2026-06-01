@@ -188,6 +188,29 @@ sudo cp deploy/rok1685.service /etc/systemd/system/ && sudo systemctl enable --n
 
 ---
 
+## Officer tools & analytics
+
+* **Bulk title rotation ("title duty").** Queue a list of governors for a title;
+  the worker grants it to each in turn and **holds for a set time (default 3
+  min, adjustable per rotation)** before advancing. Rotations are **exclusive** —
+  while one runs, one-off commands wait. Live view shows the current holder, a
+  countdown, and per-member status; you can **skip** the current holder or
+  **cancel** the rotation. Every grant lands in the audit log.
+* **Per-action permissions.** Any officer can locate, scan, give titles, run
+  rotations and change ranks — **except promoting to R5 (kingdom leader), which
+  is admin-only**. The UI hides what your role can't do; the server enforces it.
+* **Automatic scans.** Admins can schedule daily rankings scans (e.g. Power at
+  02:00); the worker enqueues them when due.
+* **KvK DKP rankings** (`/dkp.html`). Points from T4/T5 kills + deads *gained*
+  over an event window, each weighted (defaults T4×1, T5×2, deads×5). Pick a
+  saved **event** or a custom range.
+* **Audit log** (`/audit.html`). Every control action with the issuing officer,
+  filterable by action / officer / date, with **CSV export**.
+* **Dashboard alerts.** Power drops (possible quit/migration) and dead-troop
+  spikes over the last 7 days.
+* **Force password change.** Admins can flag an existing account to change its
+  password on next login without resetting it.
+
 ## Data model
 Each rankings scan upserts one **snapshot per governor per day**, coalescing
 columns (a power scan fills power+KP, a dead scan fills deads, …). The website

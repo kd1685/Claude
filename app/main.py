@@ -11,7 +11,8 @@ from .config import config
 from .db import init_db
 from . import users
 from .control import worker
-from .api import auth, control, mapdata, players, rallies, scans, stats
+from .api import (auth, control, events, mapdata, players, rallies, scans,
+                  schedules, stats)
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
@@ -41,7 +42,8 @@ def public_config():
 
 
 for r in (auth.router, stats.router, players.router, scans.router,
-          control.router, mapdata.router, rallies.router):
+          control.router, mapdata.router, rallies.router,
+          schedules.router, events.router):
     app.include_router(r)
 
 # The website. Mounted last so /api/* routes win. html=True serves index.html.

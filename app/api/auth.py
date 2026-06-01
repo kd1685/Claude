@@ -118,3 +118,11 @@ def reset_password(user_id: int, body: PasswordIn, admin=Depends(require_admin))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return {"ok": True}
+
+
+@router.post("/users/{user_id}/force-change")
+def force_change(user_id: int, value: bool = True, admin=Depends(require_admin)):
+    """Flag (or clear) an existing account to change its password next login,
+    without resetting the password."""
+    users.set_must_change(user_id, value)
+    return {"ok": True}

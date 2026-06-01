@@ -84,6 +84,13 @@ def set_password(user_id: int, password: str, must_change: bool = False) -> None
     conn.commit()
 
 
+def set_must_change(user_id: int, must_change: bool) -> None:
+    conn = get_conn()
+    conn.execute("UPDATE users SET must_change_password=? WHERE id=?",
+                 (1 if must_change else 0, user_id))
+    conn.commit()
+
+
 def touch_login(user_id: int) -> None:
     conn = get_conn()
     conn.execute("UPDATE users SET last_login=datetime('now') WHERE id=?", (user_id,))

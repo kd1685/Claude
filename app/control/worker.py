@@ -6,13 +6,13 @@ do one thing at once.
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import threading
-import time
 
 from ..config import config
 from ..db import get_conn
-from . import actions
+from . import actions, rotation
 
 _thread: threading.Thread | None = None
 _stop = threading.Event()
@@ -74,10 +74,35 @@ def _process_one() -> bool:
     return True
 
 
+def _check_schedules() -> None:
+    """Enqueue automatic scans for any schedule that is due today."""
+    now = dt.datetime.now()
+    today = now.date().isoformat()
+    conn = get_conn()
+    for s in conn.execute("SELECT * FROM scan_schedules WHERE active=1").fetchall():
+        if s["last_run_date"] == today:
+            continue
+        due = (now.hour, now.minute) >= (s["at_hour"], s["at_minute"])
+        if due:
+            enqueue("scan", params={"kind": s["kind"], "pages": s["pages"]},
+                    issued_by_name=f"schedule #{s['id']}")
+            conn.execute("UPDATE scan_schedules SET last_run_date=? WHERE id=?",
+                         (today, s["id"]))
+            conn.commit()
+
+
+def _tick() -> bool:
+    # Rotations are exclusive and take priority over everything else.
+    if rotation.step():
+        return False  # a rotation is running (possibly holding) — wait the interval
+    _check_schedules()
+    return _process_one()
+
+
 def _loop() -> None:
     while not _stop.is_set():
         try:
-            worked = _process_one()
+            worked = _tick()
         except Exception:
             worked = False
         if not worked:
