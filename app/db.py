@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     role          TEXT NOT NULL DEFAULT 'officer',  -- admin | officer
     active        INTEGER NOT NULL DEFAULT 1,
+    must_change_password INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT DEFAULT (datetime('now')),
     last_login    TEXT
 );
@@ -152,6 +153,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE commands ADD COLUMN issued_by INTEGER")
     if "issued_by_name" not in cols:
         conn.execute("ALTER TABLE commands ADD COLUMN issued_by_name TEXT")
+    ucols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
+    if ucols and "must_change_password" not in ucols:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
 
 
 def upsert_player(name: str, governor_id: str | None = None,

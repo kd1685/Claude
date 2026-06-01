@@ -59,6 +59,7 @@ def me(request: Request):
         "authenticated": True,
         "username": user["username"],
         "role": user["role"],
+        "must_change_password": bool(user["must_change_password"]),
         # Warn the admin while the seeded admin password is still the default.
         "default_password": user["role"] == "admin" and config.admin_password_is_default,
     }
@@ -74,7 +75,7 @@ def change_password(body: ChangePasswordIn, response: Response, user=Depends(req
         raise HTTPException(400, "new password must be at least 6 characters")
     if body.new_password == body.current_password:
         raise HTTPException(400, "new password must differ from the current one")
-    users.set_password(user["id"], body.new_password)
+    users.set_password(user["id"], body.new_password, must_change=False)
     # Re-issue the session so the cookie stays valid after the change.
     response.set_cookie(
         COOKIE, make_token(user), max_age=config.SESSION_TTL,
@@ -92,8 +93,10 @@ def get_users(admin=Depends(require_admin)):
 
 @router.post("/users")
 def add_user(body: UserIn, admin=Depends(require_admin)):
+    # New officers get a temp password and must change it on first login.
     try:
-        uid = users.create_user(body.username, body.password, body.role)
+        uid = users.create_user(body.username, body.password, body.role,
+                                must_change=True)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return {"id": uid}
@@ -109,8 +112,9 @@ def set_active(user_id: int, active: bool, admin=Depends(require_admin)):
 
 @router.post("/users/{user_id}/password")
 def reset_password(user_id: int, body: PasswordIn, admin=Depends(require_admin)):
+    # An admin reset is a temp password — force the officer to change it.
     try:
-        users.set_password(user_id, body.password)
+        users.set_password(user_id, body.password, must_change=True)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return {"ok": True}

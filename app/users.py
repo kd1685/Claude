@@ -43,13 +43,14 @@ def get_user_by_username(username: str):
 
 def list_users() -> list[dict]:
     rows = get_conn().execute(
-        "SELECT id, username, role, active, created_at, last_login "
+        "SELECT id, username, role, active, must_change_password, created_at, last_login "
         "FROM users ORDER BY role='admin' DESC, username"
     ).fetchall()
     return [dict(r) for r in rows]
 
 
-def create_user(username: str, password: str, role: str = "officer") -> int:
+def create_user(username: str, password: str, role: str = "officer",
+                must_change: bool = False) -> int:
     username = username.strip()
     if not username or not password:
         raise ValueError("username and password are required")
@@ -58,8 +59,9 @@ def create_user(username: str, password: str, role: str = "officer") -> int:
     conn = get_conn()
     try:
         cur = conn.execute(
-            "INSERT INTO users (username, password_hash, role) VALUES (?,?,?)",
-            (username, hash_password(password), role),
+            "INSERT INTO users (username, password_hash, role, must_change_password) "
+            "VALUES (?,?,?,?)",
+            (username, hash_password(password), role, 1 if must_change else 0),
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -73,12 +75,12 @@ def set_active(user_id: int, active: bool) -> None:
     conn.commit()
 
 
-def set_password(user_id: int, password: str) -> None:
+def set_password(user_id: int, password: str, must_change: bool = False) -> None:
     if not password:
         raise ValueError("password is required")
     conn = get_conn()
-    conn.execute("UPDATE users SET password_hash=? WHERE id=?",
-                 (hash_password(password), user_id))
+    conn.execute("UPDATE users SET password_hash=?, must_change_password=? WHERE id=?",
+                 (hash_password(password), 1 if must_change else 0, user_id))
     conn.commit()
 
 

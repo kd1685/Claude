@@ -72,7 +72,17 @@ def test_full_flow():
         officer = TestClient(app)
         assert officer.post("/api/auth/login",
                             json={"username": "scout", "password": "pw1"}).status_code == 200
-        # Officers cannot manage other officers (admin-only).
+        # New officer must change the temp password before doing anything.
+        assert officer.get("/api/auth/me").json()["must_change_password"] is True
+        assert officer.get("/api/control/status").status_code == 403  # locked out
+        assert officer.post("/api/control/locate", json={"player_id": 1}).status_code == 403
+        # Changing the password clears the flag and unlocks control.
+        assert officer.post("/api/auth/change-password",
+                            json={"current_password": "pw1", "new_password": "pw1real"}
+                            ).status_code == 200
+        assert officer.get("/api/auth/me").json()["must_change_password"] is False
+        assert officer.get("/api/control/status").status_code == 200
+        # Officers still cannot manage other officers (admin-only).
         assert officer.post("/api/auth/users",
                             json={"username": "x", "password": "y"}).status_code == 403
 
@@ -92,14 +102,22 @@ def test_full_flow():
                             json={"current_password": "nope", "new_password": "brandnew"}
                             ).status_code == 400
         assert officer.post("/api/auth/change-password",
-                            json={"current_password": "pw1", "new_password": "brandnew"}
+                            json={"current_password": "pw1real", "new_password": "brandnew"}
                             ).status_code == 200
         # Old password no longer works; new one does.
         fresh = TestClient(app)
         assert fresh.post("/api/auth/login",
-                          json={"username": "scout", "password": "pw1"}).status_code == 401
+                          json={"username": "scout", "password": "pw1real"}).status_code == 401
         assert fresh.post("/api/auth/login",
                           json={"username": "scout", "password": "brandnew"}).status_code == 200
+
+        # Admin password reset re-arms the forced-change flag.
+        oid = next(u["id"] for u in client.get("/api/auth/users").json() if u["username"] == "scout")
+        assert client.post(f"/api/auth/users/{oid}/password",
+                           json={"password": "tempagain"}).status_code == 200
+        reset_client = TestClient(app)
+        reset_client.post("/api/auth/login", json={"username": "scout", "password": "tempagain"})
+        assert reset_client.get("/api/auth/me").json()["must_change_password"] is True
 
         # Deactivating the officer revokes access immediately.
         oid = next(u["id"] for u in client.get("/api/auth/users").json() if u["username"] == "scout")

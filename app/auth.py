@@ -71,16 +71,28 @@ def current_user(request: Request):
 
 
 def require_auth(request: Request):
-    """Dependency: any logged-in officer. Returns the user row."""
+    """Dependency: any logged-in officer. Returns the user row.
+
+    Allows users flagged for a forced password change (so they can reach the
+    change-password endpoint); use require_ready to block everything else.
+    """
     user = current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="authentication required")
     return user
 
 
-def require_admin(request: Request):
-    """Dependency: admin officers only."""
+def require_ready(request: Request):
+    """Dependency: logged in AND not pending a forced password change."""
     user = require_auth(request)
+    if user["must_change_password"]:
+        raise HTTPException(status_code=403, detail="password change required")
+    return user
+
+
+def require_admin(request: Request):
+    """Dependency: admin officers only (and not pending a password change)."""
+    user = require_ready(request)
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="admin privileges required")
     return user

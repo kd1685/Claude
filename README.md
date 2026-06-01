@@ -149,6 +149,13 @@ Every officer (admin or not) can change their **own** password from the
 **My account** panel on the Control page. Passwords are stored as salted PBKDF2
 hashes.
 
+**Forced first-login change:** any officer created by an admin (or whose
+password an admin resets) gets a *temporary* password and is **locked out of all
+control actions** until they set their own — the Control page shows only the
+change-password form, and the API returns `403 password change required`
+elsewhere. The officers list flags these accounts with a **temp pw** badge. The
+bootstrap admin is exempt (it sets its own password via env).
+
 > Charts are vendored locally (`web/js/vendor/chart.umd.min.js`) so the site
 > renders with no external CDN.
 

@@ -68,9 +68,9 @@
     </div>
   </div>
 
-  <div class="panel" style="max-width:520px">
+  <div class="panel" id="myAccount" style="max-width:520px">
     <h2>My account</h2>
-    <p class="sub">Change your own password.</p>
+    <p class="sub" id="cp_sub">Change your own password.</p>
     <div class="row" style="align-items:end">
       <div class="field"><label>Current password</label><input id="cp_cur" type="password" autocomplete="current-password" /></div>
       <div class="field"><label>New password</label><input id="cp_new" type="password" autocomplete="new-password" /></div>
@@ -139,7 +139,7 @@ async function loadOfficers() {
   document.getElementById("officers").innerHTML = list.map(u => `
     <tr>
       <td>${u.username}</td>
-      <td><span class="tag">${u.role}</span></td>
+      <td><span class="tag">${u.role}</span>${u.must_change_password?' <span class="tag" style="border-color:var(--gold);color:var(--gold)">temp pw</span>':''}</td>
       <td class="${u.active?'status-done':'status-failed'}">${u.active?'active':'disabled'}</td>
       <td class="muted">${(u.last_login||'never').replace('T',' ')}</td>
       <td>
@@ -171,12 +171,26 @@ async function queued(promise) {
 }
 
 let _started = false;
+let _mustChange = false;
 async function startApp(me) {
   if (_started) return;
   _started = true;
+  _mustChange = !!me.must_change_password;
   document.getElementById("loginGate").style.display = "none";
   document.getElementById("app").style.display = "";
   document.getElementById("whoami").textContent = `· ${me.username} (${me.role})`;
+  document.getElementById("cp_go").onclick = changePassword;
+
+  if (_mustChange) {
+    // Forced password change: show ONLY the My account panel until done.
+    document.querySelectorAll("#app > .panel, #app > .cards").forEach(el => {
+      if (el.id !== "myAccount") el.style.display = "none";
+    });
+    document.getElementById("cp_sub").innerHTML =
+      "🔒 <b>Set a new password to continue.</b> Your account uses a temporary password assigned by an admin.";
+    document.getElementById("cp_cur").focus();
+    return;
+  }
 
   const tasks = [loadStatus(), loadPlayers(), loadQueue()];
   if (me.role === "admin") {
@@ -190,24 +204,6 @@ async function startApp(me) {
   };
   document.getElementById("logout").onclick = async () => {
     await post("/api/auth/logout"); location.reload();
-  };
-  document.getElementById("cp_go").onclick = async () => {
-    const msg = document.getElementById("cp_msg");
-    const cur = document.getElementById("cp_cur").value;
-    const nw = document.getElementById("cp_new").value;
-    const conf = document.getElementById("cp_conf").value;
-    msg.style.color = "var(--red)";
-    if (nw !== conf) { msg.textContent = "New passwords do not match."; return; }
-    try {
-      await post("/api/auth/change-password", { current_password: cur, new_password: nw });
-      msg.style.color = "var(--green)"; msg.textContent = "Password updated.";
-      ["cp_cur","cp_new","cp_conf"].forEach(id => document.getElementById(id).value = "");
-      toast("Password updated");
-    } catch (e) {
-      let m = e.message.replace(/^\d+:\s*/, "");
-      try { m = JSON.parse(m).detail || m; } catch {}
-      msg.textContent = m;
-    }
   };
   document.getElementById("t_go").onclick = () => queued(post("/api/control/give-title",
     { player_id: +t_player.value, title: t_title.value }));
@@ -231,6 +227,26 @@ async function startApp(me) {
   };
 
   setInterval(loadQueue, 3000);
+}
+
+async function changePassword() {
+  const msg = document.getElementById("cp_msg");
+  const cur = document.getElementById("cp_cur").value;
+  const nw = document.getElementById("cp_new").value;
+  const conf = document.getElementById("cp_conf").value;
+  msg.style.color = "var(--red)";
+  if (nw !== conf) { msg.textContent = "New passwords do not match."; return; }
+  try {
+    await post("/api/auth/change-password", { current_password: cur, new_password: nw });
+    ["cp_cur","cp_new","cp_conf"].forEach(id => document.getElementById(id).value = "");
+    if (_mustChange) { toast("Password set — unlocking…"); setTimeout(() => location.reload(), 700); return; }
+    msg.style.color = "var(--green)"; msg.textContent = "Password updated.";
+    toast("Password updated");
+  } catch (e) {
+    let m = e.message.replace(/^\d+:\s*/, "");
+    try { m = JSON.parse(m).detail || m; } catch {}
+    msg.textContent = m;
+  }
 }
 
 function showLogin(msg) {
