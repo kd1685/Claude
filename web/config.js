@@ -1,10 +1,10 @@
 // ---- Kingdom 1685 site configuration ----
-// The website (these static pages) talks to the tracker backend's REST API.
+// The website talks to the tracker backend's REST API.
 //
-// • Hosted on GitHub Pages?  Set API_BASE to your backend's PUBLIC url once the
-//   tracker + client bot are online, e.g. "https://rok.example.com".
-//   Until then the data pages just show "no data yet" — they fill in
-//   automatically once this points at a live backend (no redeploy needed).
+// • Served from your VPS (the normal setup): leave this "". The site and API
+//   are the same origin, so everything just works.
 //
-// • Website served by the backend itself (same server)?  Leave it "".
+// • Hosting the website somewhere separate (e.g. a static host) and pointing it
+//   at a remote backend: set this to that backend's public URL, e.g.
+//   "https://rok.example.com", and set CORS_ORIGINS on the backend.
 window.API_BASE = "";

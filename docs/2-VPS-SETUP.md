@@ -1,17 +1,34 @@
 # 2. Put it online on a VPS (with login)
 
-This gets the website live on the internet: **public data pages**, a
-**password-protected Control page**, and an Android instance the controller can
-drive. Everything runs in Docker.
+**One box does everything** — no GitHub/Netlify needed. The same VPS serves the
+**website**, the **API**, the **database**, and runs the **bot** (an Android
+emulator the controller drives). Caddy puts it all on **one URL**:
+
+```
+https://rok.example.com/            ← public data pages
+https://rok.example.com/control.html ← officers (login)
+https://rok.example.com/api/...      ← API (same origin, no CORS needed)
+```
 
 ### You need
-- A Linux VPS (Ubuntu works well). 2 vCPU / 4 GB RAM is comfortable.
-- Docker + the compose plugin installed:
+- A Linux VPS where **you control the kernel** — bare-metal or a KVM VPS, *not*
+  OpenVZ/LXC. 2 vCPU / 4 GB RAM is comfortable. (This kernel requirement is only
+  for the Android emulator/bot; the website+API run anywhere.)
+- Docker + the compose plugin:
   ```bash
   curl -fsSL https://get.docker.com | sh
   ```
-- (Optional but recommended) a domain name, e.g. `rok.example.com`, with an
-  **A record** pointing at your VPS IP. Needed for automatic HTTPS.
+- (Recommended) a domain, e.g. `rok.example.com`, with an **A record** to your
+  VPS IP — enables automatic HTTPS.
+
+### Step 0 — preflight: can this VPS run the bot?
+```bash
+bash deploy/preflight.sh
+```
+- **All ✓** → great, the bot (Android emulator) will run here; continue below.
+- **"no binder support"** → the website/API will still run, but the emulator
+  won't. See **[3-CONNECT-GAME.md](3-CONNECT-GAME.md) → "If the emulator won't
+  run on your VPS"** for alternatives (KVM host, or point ADB at a real phone).
 
 ### Step 1 — get the code
 ```bash

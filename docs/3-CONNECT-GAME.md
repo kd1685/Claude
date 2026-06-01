@@ -71,6 +71,25 @@ Dead at `02:20`. **Times are UTC.** Now the kingdom history fills itself daily.
 
 ✅ Done. See **[4-DAILY-USE.md](4-DAILY-USE.md)** for everyday tasks.
 
+### If the emulator won't run on your VPS
+`deploy/preflight.sh` said "no binder support" (common on OpenVZ/LXC VPSes)?
+The website, API, charts and accounts all still work — only the live scan/control
+actions need a reachable Android instance. Pick one:
+
+1. **Use a host where you control the kernel** — bare-metal or a KVM VPS whose
+   kernel has `CONFIG_ANDROID_BINDERFS` (most do). Re-run the preflight there.
+2. **Full Android emulator on a KVM host** (needs `/dev/kvm`) — heavier than
+   redroid but works where binder modules are available.
+3. **Point ADB at a real Android phone/tablet** running RoK on your network:
+   ```bash
+   # in deploy/.env
+   CONTROL_BACKEND=adb
+   ADB_CONNECT=PHONE_IP:5555      # enable "Wireless debugging" on the phone
+   ADB_SERIAL=PHONE_IP:5555
+   ```
+   Drop the `android` service from the compose file (or just ignore it) and the
+   `app` container talks to your phone instead. Everything else is identical.
+
 ### Troubleshooting
 - **`connected: false`** — the emulator isn't reachable. `dc exec app adb devices`
   should list `android:5555`. If not: `dc restart android` and wait a minute.
