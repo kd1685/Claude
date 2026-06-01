@@ -1,4 +1,4 @@
-# Rise of Kingdoms — Kingdom 1685 Tracker & Controller
+# Rise of Kingdoms — Kingdom  Tracker & Controller
 
 A self-hosted command center for a Rise of Kingdoms kingdom. It does two jobs:
 
@@ -8,7 +8,7 @@ A self-hosted command center for a Rise of Kingdoms kingdom. It does two jobs:
    (Justice / Duke / Architect / Scientist), change **alliance ranks** (R1–R5)
    and **locate governors** on the map — by driving a real client over ADB.
 
-On top of that sits the **Kingdom 1685 website**: a dashboard plus dedicated
+On top of that sits the **Kingdom  website**: a dashboard plus dedicated
 pages for Power/KP, Dead troops, Rallies, Governors and the Map — every page
 has **date selectors** (and date-range gains) so you can review any day's
 standings.
