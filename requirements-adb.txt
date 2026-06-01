@@ -1,0 +1,7 @@
+# Extra dependencies for the real ADB / emulator automation + OCR scanner.
+# Requires the `adb` binary (Android platform-tools) and the `tesseract` OCR
+# binary to also be installed on the host running this.
+pillow>=10.0
+opencv-python>=4.8
+pytesseract>=0.3.10
+numpy>=1.26

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kingdom 1685 — Map</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+<main>
+  <h1>Kingdom Map</h1>
+  <p class="sub">Last known position of each tracked governor (kingdom grid 0–1023). Use Control → Locate to refresh a governor's position.</p>
+
+  <div class="toolbar">
+    <div class="field"><label>As of date</label><select id="date"></select></div>
+    <div class="field grow"><label>Highlight governor</label><input id="hl" placeholder="name…" /></div>
+    <button class="primary" id="go">Apply</button>
+  </div>
+
+  <div class="row">
+    <div class="panel">
+      <canvas id="mapcanvas" width="560" height="560"></canvas>
+    </div>
+    <div class="panel grow">
+      <h2>Positions</h2>
+      <table>
+        <thead><tr><th>Governor</th><th>Alliance</th><th class="num">X</th><th class="num">Y</th><th>Seen</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script src="js/common.js"></script>
+<script>
+function draw(positions, hl) {
+  const c = document.getElementById("mapcanvas");
+  const ctx = c.getContext("2d");
+  const S = c.width, scale = S / 1024;
+  ctx.clearRect(0, 0, S, S);
+  // grid
+  ctx.strokeStyle = "#22304f"; ctx.lineWidth = 1;
+  for (let i = 0; i <= 8; i++) {
+    const p = i * S / 8;
+    ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, S); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(S, p); ctx.stroke();
+  }
+  const colors = {};
+  const palette = ["#e7b94e","#5aa6ff","#4fd17a","#f06a6a","#c08bff","#48d6d2"];
+  positions.forEach(p => {
+    if (p.x == null) return;
+    const a = p.alliance || "?";
+    if (!(a in colors)) colors[a] = palette[Object.keys(colors).length % palette.length];
+    const isHl = hl && p.name && p.name.toLowerCase().includes(hl.toLowerCase());
+    ctx.fillStyle = isHl ? "#fff" : colors[a];
+    ctx.beginPath();
+    ctx.arc(p.x * scale, (1023 - p.y) * scale, isHl ? 6 : 4, 0, 7);
+    ctx.fill();
+  });
+}
+
+async function load() {
+  const date = document.getElementById("date").value;
+  const hl = document.getElementById("hl").value.trim();
+  const data = await api(`/api/map/positions?date=${date}`);
+  draw(data.positions, hl);
+  document.getElementById("rows").innerHTML = data.positions.map(p => `
+    <tr><td>${p.name}</td><td><span class="tag">${p.alliance || "—"}</span></td>
+        <td class="num">${p.x ?? "—"}</td><td class="num">${p.y ?? "—"}</td>
+        <td class="muted">${p.captured_at}</td></tr>`).join("")
+    || `<tr><td colspan="5" class="muted">No positions recorded.</td></tr>`;
+}
+
+(async () => {
+  await buildHeader("map.html");
+  await fillDateOptions(document.getElementById("date"));
+  document.getElementById("go").onclick = load;
+  document.getElementById("date").onchange = load;
+  document.getElementById("hl").oninput = load;
+  await load();
+})();
+</script>
+</body>
+</html>

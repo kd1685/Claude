@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kingdom 1685 — Dashboard</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<main>
+  <h1>Kingdom Dashboard</h1>
+  <p class="sub">Live overview of kingdom 1685 — pick a date to view its standings.</p>
+
+  <div class="toolbar">
+    <div class="field">
+      <label for="date">Snapshot date</label>
+      <select id="date"></select>
+    </div>
+    <div class="field">
+      <label for="metric">Power chart range</label>
+      <select id="range">
+        <option value="14">Last 14 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="90">Last 90 days</option>
+      </select>
+    </div>
+    <button class="primary" id="refresh">Refresh</button>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="panel">
+    <h2>Total kingdom power over time</h2>
+    <div style="height:280px"><canvas id="powerChart"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <h2>Top 10 by power</h2>
+    <table>
+      <thead><tr><th class="pos">#</th><th>Governor</th><th>Alliance</th><th class="num">Power</th><th class="num">Kill Points</th><th class="num">Deads</th></tr></thead>
+      <tbody id="top"></tbody>
+    </table>
+  </div>
+</main>
+
+<script src="js/common.js"></script>
+<script>
+async function load() {
+  const date = document.getElementById("date").value;
+  const days = +document.getElementById("range").value;
+  const from = (() => { const t = new Date(date); t.setDate(t.getDate() - days); return t.toISOString().slice(0,10); })();
+
+  const [sum, totals, board] = await Promise.all([
+    api(`/api/stats/summary?date=${date}`),
+    api(`/api/stats/kingdom-totals?metric=power&from=${from}&to=${date}`),
+    api(`/api/stats/leaderboard?metric=power&date=${date}&limit=10`),
+  ]);
+
+  document.getElementById("cards").innerHTML = [
+    ["Governors tracked", sum.governors],
+    ["Total power", fmt(sum.total_power)],
+    ["Total kill points", fmt(sum.total_kill_points)],
+    ["Total dead troops", fmt(sum.total_deads)],
+  ].map(([l, v]) => `<div class="card"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
+
+  lineChart("powerChart", totals.series.map(s => s.captured_at),
+    [{ label: "Total power", data: totals.series.map(s => s.total), borderColor: "#e7b94e", backgroundColor: "rgba(231,185,78,.12)", fill: true }]);
+
+  document.getElementById("top").innerHTML = board.rows.map(r => `
+    <tr><td class="pos">${r.position}</td>
+        <td><a href="players.html?id=${r.player_id}">${r.name}</a></td>
+        <td><span class="tag">${r.alliance || "—"}</span></td>
+        <td class="num">${fmt(r.value)}</td>
+        <td class="num muted">${r.kill_points!=null?fmt(r.kill_points):"—"}</td>
+        <td class="num muted">${r.deads!=null?fmt(r.deads):"—"}</td></tr>`).join("")
+    || `<tr><td colspan="6" class="muted">No data yet — run a scan or seed demo data.</td></tr>`;
+}
+
+(async () => {
+  await buildHeader("index.html");
+  await fillDateOptions(document.getElementById("date"));
+  document.getElementById("refresh").onclick = load;
+  document.getElementById("date").onchange = load;
+  document.getElementById("range").onchange = load;
+  await load();
+})();
+</script>
+</body>
+</html>

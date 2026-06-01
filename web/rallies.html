@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kingdom 1685 — Rallies</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<main>
+  <h1>Rally Log</h1>
+  <p class="sub">Rallies led across a date range — counts, troops committed and win rate.</p>
+
+  <div class="toolbar">
+    <div class="field"><label>From</label><input type="date" id="from" /></div>
+    <div class="field"><label>To</label><input type="date" id="to" /></div>
+    <button class="primary" id="go">Apply</button>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="panel">
+    <h2>Rallies per day</h2>
+    <div style="height:240px"><canvas id="chart"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <h2>Rally events</h2>
+    <table>
+      <thead><tr><th>Date</th><th>Leader</th><th>Target</th><th>Coords</th>
+        <th class="num">Troops</th><th>Result</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</main>
+
+<script src="js/common.js"></script>
+<script>
+async function load() {
+  const from = document.getElementById("from").value;
+  const to = document.getElementById("to").value;
+  const data = await api(`/api/rallies?frm=${from}&to=${to}`);
+
+  const totalRallies = data.by_day.reduce((a, d) => a + d.rallies, 0);
+  const totalTroops = data.by_day.reduce((a, d) => a + (d.troops || 0), 0);
+  const wins = data.by_day.reduce((a, d) => a + (d.wins || 0), 0);
+  const wr = totalRallies ? Math.round(100 * wins / totalRallies) : 0;
+  document.getElementById("cards").innerHTML = [
+    ["Rallies", totalRallies], ["Troops committed", fmt(totalTroops)],
+    ["Wins", wins], ["Win rate", wr + "%"],
+  ].map(([l, v]) => `<div class="card"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
+
+  lineChart("chart", data.by_day.map(d => d.captured_at),
+    [{ label: "rallies", data: data.by_day.map(d => d.rallies), borderColor: "#e7b94e", backgroundColor: "rgba(231,185,78,.12)", fill: true }]);
+
+  document.getElementById("rows").innerHTML = data.rows.map(r => `
+    <tr><td>${r.captured_at}</td><td>${r.leader_name || "—"}</td>
+        <td>${r.target_label || r.target_type || "—"}</td>
+        <td class="muted">${r.x!=null?`(${r.x},${r.y})`:"—"}</td>
+        <td class="num">${fmt(r.troops)}</td>
+        <td class="${r.status==='win'?'status-done':r.status==='loss'?'status-failed':'muted'}">${r.status || "—"}</td></tr>`).join("")
+    || `<tr><td colspan="6" class="muted">No rallies in this range.</td></tr>`;
+}
+
+(async () => {
+  await buildHeader("rallies.html");
+  document.getElementById("to").value = todayISO();
+  document.getElementById("from").value = daysAgoISO(14);
+  document.getElementById("go").onclick = load;
+  await load();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+{
+  "name": "rok_720p",
+  "_comment": [
+    "Calibration profile for a 1280x720 LANDSCAPE Rise of Kingdoms client.",
+    "These coordinates are SENSIBLE DEFAULTS, not exact — every emulator/skin",
+    "differs slightly. Calibrate with: scripts/calibrate.py (taps where you click)",
+    "or read pixel coords from a screenshot. OCR 'region' is [x, y, width, height]."
+  ],
+  "screen": {"width": 1280, "height": 720},
+
+  "anchors": {
+    "search_button":   [48, 470],
+    "search_field":    [640, 120],
+    "first_result":    [640, 220],
+    "coords_readout":  [1090, 28],
+
+    "city_center":     [640, 360],
+    "city_title_icon": [560, 300],
+    "title_justice":   [470, 430],
+    "title_duke":      [580, 430],
+    "title_architect": [690, 430],
+    "title_scientist": [800, 430],
+
+    "rankings_button": [1180, 250],
+    "tab_power":       [430, 150],
+    "tab_killpoints":  [640, 150],
+    "tab_dead":        [850, 150],
+
+    "alliance_button": [1180, 360],
+    "alliance_members":[180, 200],
+    "member_search":   [640, 150],
+    "first_member":    [400, 250],
+    "member_manage":   [900, 250],
+    "rank_r1":         [500, 300],
+    "rank_r2":         [500, 360],
+    "rank_r3":         [500, 420],
+    "rank_r4":         [500, 480],
+    "rank_r5":         [500, 540]
+  },
+
+  "macros": {
+    "locate_player": [
+      {"tap": "search_button"}, {"wait": 800},
+      {"tap": "search_field"}, {"wait": 400},
+      {"text": "{name}"}, {"key": 66}, {"wait": 1500},
+      {"tap": "first_result"}, {"wait": 2500},
+      {"ocr": {"region": [1000, 12, 240, 34], "into": "coords",
+               "pattern": "(\\d+)\\s*[,Xx: ]+\\s*(\\d+)",
+               "groups": {"x": 1, "y": 2}}}
+    ],
+    "give_title": [
+      {"tap": "city_center"}, {"wait": 1200},
+      {"tap": "city_title_icon"}, {"wait": 1000},
+      {"tap_var": "title_point"}, {"wait": 800},
+      {"back": true}, {"wait": 400}, {"back": true}
+    ],
+    "change_rank": [
+      {"tap": "alliance_button"}, {"wait": 1200},
+      {"tap": "alliance_members"}, {"wait": 1000},
+      {"tap": "member_search"}, {"text": "{name}"}, {"key": 66}, {"wait": 1500},
+      {"tap": "first_member"}, {"wait": 1000},
+      {"tap": "member_manage"}, {"wait": 800},
+      {"tap_var": "rank_point"}, {"wait": 800},
+      {"back": true}, {"wait": 400}, {"back": true}
+    ],
+    "open_rankings": [
+      {"tap": "rankings_button"}, {"wait": 1500},
+      {"tap_var": "tab_point"}, {"wait": 1200}
+    ],
+    "close_rankings": [
+      {"back": true}, {"wait": 400}, {"back": true}
+    ]
+  },
+
+  "rankings": {
+    "_comment": "Per-visible-row OCR regions [x,y,w,h] for name + value, plus a scroll gesture.",
+    "scroll": [640, 600, 640, 250, 700],
+    "rows": [
+      {"name": [330, 168, 360, 44], "value": [900, 168, 320, 44]},
+      {"name": [330, 232, 360, 44], "value": [900, 232, 320, 44]},
+      {"name": [330, 296, 360, 44], "value": [900, 296, 320, 44]},
+      {"name": [330, 360, 360, 44], "value": [900, 360, 320, 44]},
+      {"name": [330, 424, 360, 44], "value": [900, 424, 320, 44]},
+      {"name": [330, 488, 360, 44], "value": [900, 488, 320, 44]}
+    ]
+  }
+}

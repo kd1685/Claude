@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kingdom 1685 — Control</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+<main>
+  <h1>Account Control</h1>
+  <p class="sub">Drive the controlling RoK client: grant titles, change alliance ranks, locate governors and run rankings scans. Commands are queued and run one at a time.</p>
+
+  <div class="panel">
+    <h2>Backend</h2>
+    <div class="row">
+      <div class="grow"><pre id="status" class="muted" style="white-space:pre-wrap"></pre></div>
+      <div><button class="primary" id="connect">Connect / refresh</button></div>
+    </div>
+    <p class="hint">Backend is set by <code>CONTROL_BACKEND</code> (mock or adb). With <code>adb</code> it drives a real device/emulator — see the README for VPS setup.</p>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="label">Grant title</div>
+      <div class="field" style="margin-top:8px"><select id="t_player"></select></div>
+      <div class="field" style="margin-top:8px">
+        <select id="t_title"><option>Justice</option><option>Duke</option><option>Architect</option><option>Scientist</option></select>
+      </div>
+      <button class="primary" style="margin-top:10px;width:100%" id="t_go">Give title</button>
+    </div>
+
+    <div class="card">
+      <div class="label">Change rank</div>
+      <div class="field" style="margin-top:8px"><select id="r_player"></select></div>
+      <div class="field" style="margin-top:8px">
+        <select id="r_rank"><option value="1">R1</option><option value="2">R2</option><option value="3">R3</option><option value="4">R4 (Officer)</option><option value="5">R5 (Leader)</option></select>
+      </div>
+      <button class="primary" style="margin-top:10px;width:100%" id="r_go">Set rank</button>
+    </div>
+
+    <div class="card">
+      <div class="label">Locate on map</div>
+      <div class="field" style="margin-top:8px"><select id="l_player"></select></div>
+      <button class="primary" style="margin-top:10px;width:100%" id="l_go">Locate</button>
+    </div>
+
+    <div class="card">
+      <div class="label">Scan rankings</div>
+      <div class="field" style="margin-top:8px">
+        <select id="s_kind"><option value="power">Power</option><option value="killpoints">Kill Points</option><option value="dead">Dead</option></select>
+      </div>
+      <div class="field" style="margin-top:8px"><input id="s_pages" type="number" value="4" min="1" max="50" /></div>
+      <button class="primary" style="margin-top:10px;width:100%" id="s_go">Start scan</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Command queue <span class="muted" id="qstate" style="font-size:12px"></span></h2>
+    <table>
+      <thead><tr><th>#</th><th>Action</th><th>Target</th><th>Status</th><th>Result / error</th><th>When</th></tr></thead>
+      <tbody id="queue"></tbody>
+    </table>
+  </div>
+</main>
+
+<script src="js/common.js"></script>
+<script>
+async function loadStatus() {
+  const s = await api("/api/control/status");
+  document.getElementById("status").textContent = JSON.stringify(s, null, 2);
+}
+
+async function loadPlayers() {
+  const players = await api("/api/players?limit=500");
+  const opts = players.map(p => `<option value="${p.id}">${p.name}${p.alliance?` [${p.alliance}]`:""}</option>`).join("");
+  ["t_player","r_player","l_player"].forEach(id => document.getElementById(id).innerHTML = opts);
+}
+
+async function loadQueue() {
+  const rows = await api("/api/control/commands?limit=40");
+  const pending = rows.filter(r => r.status==="pending"||r.status==="running").length;
+  document.getElementById("qstate").textContent = pending ? `· ${pending} active` : "· idle";
+  document.getElementById("queue").innerHTML = rows.map(r => {
+    let res = "—";
+    if (r.error) res = r.error;
+    else if (r.result) { try { res = JSON.parse(r.result).detail || ""; } catch { res = r.result; } }
+    return `<tr><td class="muted">${r.id}</td><td>${r.kind}</td>
+      <td>${r.player_name || (r.kind==='scan'?'(rankings)':'—')}</td>
+      <td class="status-${r.status}">${r.status}</td>
+      <td class="muted">${res}</td>
+      <td class="muted">${(r.finished_at||r.started_at||r.created_at||"").replace("T"," ")}</td></tr>`;
+  }).join("") || `<tr><td colspan="6" class="muted">No commands yet.</td></tr>`;
+}
+
+async function queued(promise) {
+  try { const r = await promise; toast(`Queued command #${r.command_id}`); await loadQueue(); }
+  catch (e) { toast("Error: " + e.message); }
+}
+
+(async () => {
+  await buildHeader("control.html");
+  await Promise.all([loadStatus(), loadPlayers(), loadQueue()]);
+
+  document.getElementById("connect").onclick = async () => {
+    const r = await post("/api/control/connect"); toast(r.detail); loadStatus();
+  };
+  document.getElementById("t_go").onclick = () => queued(post("/api/control/give-title",
+    { player_id: +t_player.value, title: t_title.value }));
+  document.getElementById("r_go").onclick = () => queued(post("/api/control/change-rank",
+    { player_id: +r_player.value, new_rank: +r_rank.value }));
+  document.getElementById("l_go").onclick = () => queued(post("/api/control/locate",
+    { player_id: +l_player.value }));
+  document.getElementById("s_go").onclick = () => queued(post("/api/control/scan",
+    { kind: s_kind.value, pages: +s_pages.value }));
+
+  setInterval(loadQueue, 3000);
+})();
+</script>
+</body>
+</html>
