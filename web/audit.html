@@ -37,6 +37,7 @@
   </div>
 </main>
 
+<script src="config.js"></script>
 <script src="js/common.js"></script>
 <script>
 function qs() {
@@ -70,7 +71,7 @@ async function load() {
   if (!me.authenticated) { document.getElementById("gate").style.display = ""; return; }
   document.getElementById("content").style.display = "";
   document.getElementById("go").onclick = load;
-  document.getElementById("csv").onclick = () => { location.href = `/api/control/commands.csv?${qs()}`; };
+  document.getElementById("csv").onclick = () => { location.href = `${API_BASE}/api/control/commands.csv?${qs()}`; };
   await load();
 })();
 </script>

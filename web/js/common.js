@@ -12,8 +12,11 @@ const PAGES = [
   ["audit.html", "Audit"],
 ];
 
+// Backend base URL (set in config.js). "" = same origin as this page.
+const API_BASE = (window.API_BASE || "").replace(/\/$/, "");
+
 async function api(path, opts) {
-  const res = await fetch(path, opts);
+  const res = await fetch(API_BASE + path, { credentials: "include", ...opts });
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`${res.status}: ${body}`);
@@ -59,6 +62,24 @@ function toast(msg) {
   t.textContent = msg; t.classList.add("show");
   setTimeout(() => t.classList.remove("show"), 2600);
 }
+
+// Show a single non-intrusive banner if the backend can't be reached (e.g. the
+// Pages site is live but the tracker isn't online yet). Data appears once it is.
+function backendOffline() {
+  if (document.getElementById("offline-banner")) return;
+  const b = document.createElement("div");
+  b.id = "offline-banner";
+  b.style.cssText = "background:#3a2a12;border-bottom:1px solid var(--gold-dim);" +
+    "color:var(--gold);padding:9px 16px;text-align:center;font-size:13px";
+  b.textContent = "⏳ Live data backend isn't connected yet — rankings will appear here once the kingdom tracker is online.";
+  const hdr = document.querySelector("header.topbar");
+  hdr ? hdr.insertAdjacentElement("afterend", b) : document.body.prepend(b);
+}
+window.addEventListener("unhandledrejection", (e) => {
+  const m = (e.reason && e.reason.message) || "";
+  if (m.includes("Failed to fetch") || m.startsWith("404") || m.includes("NetworkError"))
+    backendOffline();
+});
 
 async function buildHeader(active) {
   const cfg = await api("/api/config").catch(() => ({ kingdom: "1685", control_backend: "?" }));

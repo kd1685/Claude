@@ -39,7 +39,7 @@ def login(body: LoginIn, response: Response):
     users.touch_login(user["id"])
     response.set_cookie(
         COOKIE, make_token(user), max_age=config.SESSION_TTL,
-        httponly=True, samesite="lax", secure=config.COOKIE_SECURE, path="/",
+        httponly=True, samesite=config.COOKIE_SAMESITE, secure=config.COOKIE_SECURE, path="/",
     )
     return {"ok": True, "username": user["username"], "role": user["role"]}
 
@@ -79,7 +79,7 @@ def change_password(body: ChangePasswordIn, response: Response, user=Depends(req
     # Re-issue the session so the cookie stays valid after the change.
     response.set_cookie(
         COOKIE, make_token(user), max_age=config.SESSION_TTL,
-        httponly=True, samesite="lax", secure=config.COOKIE_SECURE, path="/",
+        httponly=True, samesite=config.COOKIE_SAMESITE, secure=config.COOKIE_SECURE, path="/",
     )
     return {"ok": True}
 

@@ -55,7 +55,14 @@ class Config:
     # survive restarts; otherwise a random per-process key is used.
     CONTROL_SECRET: str = _get("CONTROL_SECRET", "") or os.urandom(32).hex()
     COOKIE_SECURE: bool = _get("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
+    # SameSite for the session cookie. Use "none" (with COOKIE_SECURE=true) when
+    # the website is on a different origin than the backend (e.g. GitHub Pages).
+    COOKIE_SAMESITE: str = _get("COOKIE_SAMESITE", "lax").lower()
     SESSION_TTL: int = int(_get("SESSION_TTL", str(60 * 60 * 24 * 7)))  # 7 days
+
+    # Comma-separated origins allowed to call the API from a browser (CORS).
+    # e.g. "https://kd1685.github.io". Empty = same-origin only.
+    CORS_ORIGINS: list[str] = [o.strip() for o in _get("CORS_ORIGINS", "").split(",") if o.strip()]
 
     CAPTURE_DIR: Path = (ROOT / "captures").resolve()
 

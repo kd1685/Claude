@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import config
@@ -28,6 +29,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Rise of Kingdoms 1685 Tracker", version="1.0.0",
               lifespan=lifespan)
+
+# Allow a separately-hosted website (e.g. GitHub Pages) to call this API.
+if config.CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=config.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 @app.get("/api/health")
