@@ -30,6 +30,15 @@ bash deploy/preflight.sh
   won't. See **[3-CONNECT-GAME.md](3-CONNECT-GAME.md) → "If the emulator won't
   run on your VPS"** for alternatives (KVM host, or point ADB at a real phone).
 
+### Easiest: one-shot installer
+```bash
+git clone <your-repo-url> rok1685 && cd rok1685
+bash deploy/setup.sh
+```
+It runs the preflight, asks for your domain + admin login (a few prompts),
+writes `deploy/.env` (generating the session secret), and starts everything.
+Then skip to **Step 4 — open it**. Prefer to do it by hand? Follow the steps below.
+
 ### Step 1 — get the code
 ```bash
 git clone <your-repo-url> rok1685
