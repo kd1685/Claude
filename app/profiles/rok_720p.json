@@ -15,6 +15,7 @@
     "tab_killpoints":  [640, 410],
     "tab_dead":        [310, 410],
     "close_x":         [1115, 43],
+    "profile_close":   [1163, 71],
 
     "search_button":   [48, 470],
     "search_field":    [640, 120],
@@ -70,9 +71,9 @@
       {"tap_var": "tab_point"}, {"wait": 1800}
     ],
     "close_rankings": [
-      {"tap": "close_x"}, {"wait": 700},
-      {"tap": "close_x"}, {"wait": 700},
-      {"tap": "close_x"}, {"wait": 700}
+      {"tap": "close_x"}, {"wait": 800},
+      {"tap": "close_x"}, {"wait": 800},
+      {"tap": "profile_close"}, {"wait": 800}
     ]
   },
 
