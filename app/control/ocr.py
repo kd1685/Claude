@@ -63,3 +63,32 @@ def parse_int(text: str) -> int | None:
         return None
     digits = re.sub(r"[^\d]", "", m.group(0))
     return int(digits) if digits else None
+
+
+def find_text(png_bytes: bytes, target: str, min_ratio: float = 0.72):
+    """Locate `target` text anywhere in a screenshot. Returns (x, y) device-pixel
+    centre of the best-matching word, or None. Used to spot a governor's
+    nameplate while panning the map."""
+    if not available() or not target:
+        return None
+    import difflib
+
+    import pytesseract
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+    proc = _preprocess(img)            # upscaled x2 in _preprocess
+    data = pytesseract.image_to_data(proc, output_type=pytesseract.Output.DICT)
+    target_l = re.sub(r"[^a-z0-9]", "", target.lower())
+    best, best_r = None, 0.0
+    for i, word in enumerate(data["text"]):
+        w = re.sub(r"[^a-z0-9]", "", word.lower())
+        if len(w) < 3:
+            continue
+        r = difflib.SequenceMatcher(None, w, target_l).ratio()
+        if r > best_r:
+            best_r = r
+            cx = (data["left"][i] + data["width"][i] / 2) / 2   # /2: undo upscale
+            cy = (data["top"][i] + data["height"][i] / 2) / 2
+            best = (int(cx), int(cy))
+    return best if best and best_r >= min_ratio else None

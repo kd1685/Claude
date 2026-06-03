@@ -125,6 +125,19 @@
     }
   },
 
+  "map_scan": {
+    "_comment": [
+      "Find one governor by panning the map and watching for their nameplate.",
+      "PLACEHOLDERS — calibrate: 'pan' is the swipe to move the view one step;",
+      "'passes' is how many steps to try; 'coords_region' is where the X/Y shows",
+      "after tapping a city. Optionally add a 'recenter' macro to jump to a known",
+      "spot (via the coordinate search) before scanning."
+    ],
+    "passes": 24,
+    "pan": [1000, 400, 280, 400, 500],
+    "coords_region": [520, 30, 240, 34]
+  },
+
   "war_reports": {
     "_comment": [
       "Alliance rally/war reports. PLACEHOLDER regions — calibrate with a screenshot",

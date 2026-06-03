@@ -173,3 +173,46 @@ def scan_profiles_via_adb(adapter, *, pages: int) -> ActionResult:
         driver.keyevent(4)
     rows = list(seen.values())
     return ActionResult(True, f"deep-scanned {len(rows)} profiles", {"rows": rows})
+
+
+def find_on_map_via_adb(adapter, *, name: str, passes: int | None = None) -> ActionResult:
+    """Scan the map for one governor by name: pan across the map, watch for the
+    nameplate, and when found tap the city to read its coordinates. Best-effort —
+    if OCR can't read the nameplate on any pass, it won't be found."""
+    if not ocr.available():
+        return ActionResult(False, "OCR not available (install requirements-adb.txt + tesseract)")
+    cfg = adapter.profile.data.get("map_scan")
+    if not cfg:
+        return ActionResult(False, "profile has no 'map_scan' calibration block")
+
+    import re
+    import time
+    driver = adapter.driver
+    passes = passes or int(cfg.get("passes", 24))
+    pan = cfg.get("pan", [1000, 400, 280, 400, 500])
+    coords_region = cfg.get("coords_region")
+
+    if "recenter" in adapter.profile.macros:
+        try:
+            adapter.run_macro("recenter", {})
+        except Exception:
+            pass
+
+    for _ in range(passes):
+        png = driver.screencap()
+        hit = ocr.find_text(png, name)
+        if hit:
+            driver.tap(hit[0], hit[1])
+            time.sleep(1.6)                       # city panel opens
+            txt = ocr.ocr_region(driver.screencap(), coords_region) if coords_region else ""
+            m = re.search(r"(\d{1,4})\D+(\d{1,4})", txt)
+            driver.keyevent(4)                    # close the panel
+            if m:
+                return ActionResult(True, f"found {name}",
+                                    {"kingdom": 1685, "x": int(m.group(1)), "y": int(m.group(2))})
+            return ActionResult(True, f"spotted {name} but could not read coords",
+                                {"raw": txt})
+        driver.swipe(*[int(v) for v in pan[:4]], ms=int(pan[4]) if len(pan) > 4 else 500)
+        time.sleep(0.6)
+
+    return ActionResult(False, f"{name} not found after {passes} map passes")

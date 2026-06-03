@@ -189,17 +189,11 @@ class AdbAdapter(AccountAdapter):
             return ActionResult(False, f"change_rank failed: {exc}")
 
     def locate(self, *, name, governor_id) -> ActionResult:
+        # RoK has no jump-to-governor search, so we scan the map for the name.
         if not self._connected:
             self.connect()
-        try:
-            ctx = self.run_macro("locate_player", {"name": name})
-            data = {"kingdom": ctx.get("kingdom"), "x": ctx.get("x"), "y": ctx.get("y")}
-            if data["x"] is None:
-                return ActionResult(False, "located but could not OCR coordinates",
-                                    {"raw": ctx.get("coords", "")})
-            return ActionResult(True, f"found {name} at {data}", data)
-        except Exception as exc:  # noqa: BLE001
-            return ActionResult(False, f"locate failed: {exc}")
+        from .scanner import find_on_map_via_adb
+        return find_on_map_via_adb(self, name=name)
 
     def scan_rankings(self, *, kind, pages) -> ActionResult:
         if not self._connected:
