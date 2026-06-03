@@ -203,6 +203,15 @@ def _advanced(client):
                       ).json()["id"]
     assert any(e["id"] == eid for e in client.get("/api/events").json())
 
+    # Deep scan (incl. deads) + rally scan run via the mock backend.
+    cid = client.post("/api/control/scan-profiles", json={"pages": 1}).json()["command_id"]
+    assert _wait_command(client, cid)["status"] == "done"
+    cid = client.post("/api/control/scan-rallies", json={"pages": 1}).json()["command_id"]
+    assert _wait_command(client, cid)["status"] == "done"
+    # Rally leaderboard reflects logged rallies.
+    lb = client.get("/api/rallies/leaderboard").json()
+    assert "rows" in lb
+
 
 def test_remote_agent():
     """RemoteAdapter hands a task to the agent (via the API) and gets the result."""

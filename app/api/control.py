@@ -66,6 +66,17 @@ def scan(body: ScanJobIn, user=Depends(require_action("scan"))):
     return _enqueue("scan", user, params={"kind": body.kind, "pages": body.pages})
 
 
+@router.post("/scan-profiles")
+def scan_profiles(body: ScanJobIn, user=Depends(require_action("scan"))):
+    """Deep scan (opens each governor's profile) to capture dead troops."""
+    return _enqueue("scan_profiles", user, params={"pages": body.pages})
+
+
+@router.post("/scan-rallies")
+def scan_rallies(body: ScanJobIn, user=Depends(require_action("scan"))):
+    return _enqueue("scan_rallies", user, params={"pages": body.pages})
+
+
 # ---- bulk title rotation ----
 
 @router.post("/rotation")

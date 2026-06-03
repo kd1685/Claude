@@ -45,6 +45,40 @@ def ingest_scan(kind: str, rows: list[dict], *, captured_at: str | None = None,
             "ingested": ingested}
 
 
+def ingest_rallies(rows: list[dict], *, captured_at: str | None = None,
+                   source: str = "scan") -> dict:
+    """Log rallies read from the alliance war reports. Skips ones already logged
+    today for the same leader+target so repeated scans don't double-count."""
+    captured_at = captured_at or today()
+    conn = get_conn()
+    added = 0
+    for row in rows:
+        leader = (row.get("leader_name") or "").strip()
+        if not leader:
+            continue
+        target = (row.get("target_label") or "").strip()
+        dup = conn.execute(
+            "SELECT 1 FROM rallies WHERE captured_at=? AND leader_name=? "
+            "AND COALESCE(target_label,'')=? LIMIT 1",
+            (captured_at, leader, target),
+        ).fetchone()
+        if dup:
+            continue
+        pid = None
+        p = conn.execute("SELECT id FROM players WHERE name=?", (leader,)).fetchone()
+        if p:
+            pid = p["id"]
+        conn.execute(
+            "INSERT INTO rallies (captured_at, leader_id, leader_name, target_type, "
+            "target_label, troops, status, source) VALUES (?,?,?,?,?,?,?,?)",
+            (captured_at, pid, leader, row.get("target_type"), target or None,
+             row.get("troops"), row.get("status"), source),
+        )
+        added += 1
+    conn.commit()
+    return {"captured_at": captured_at, "logged": added, "seen": len(rows)}
+
+
 def record_map_position(player_id: int, name: str, kingdom: int | None,
                         x: int | None, y: int | None, source: str) -> None:
     conn = get_conn()

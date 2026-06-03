@@ -41,6 +41,10 @@ def _dispatch(cmd) -> "actions.ActionResult":
         return actions.locate(cmd["player_id"])
     if kind == "scan":
         return actions.scan(params.get("kind", "power"), int(params.get("pages", 4)))
+    if kind == "scan_profiles":
+        return actions.scan_profiles(int(params.get("pages", 10)))
+    if kind == "scan_rallies":
+        return actions.scan_rallies(int(params.get("pages", 5)))
     raise ValueError(f"unknown command kind '{kind}'")
 
 

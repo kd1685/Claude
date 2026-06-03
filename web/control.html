@@ -60,11 +60,12 @@
 
     <div class="card">
       <div class="label">Scan rankings</div>
-      <div class="field" style="margin-top:8px">
-        <select id="s_kind"><option value="power">Power</option><option value="killpoints">Kill Points</option><option value="dead">Dead</option></select>
-      </div>
-      <div class="field" style="margin-top:8px"><input id="s_pages" type="number" value="4" min="1" max="50" /></div>
-      <button class="primary" style="margin-top:10px;width:100%" id="s_go">Start scan</button>
+      <label style="display:block;margin-top:8px"><input type="checkbox" id="s_power" checked> Power</label>
+      <label style="display:block"><input type="checkbox" id="s_kp" checked> Kill Points</label>
+      <div class="field" style="margin-top:8px"><label>Pages</label><input id="s_pages" type="number" value="50" min="1" max="50" /></div>
+      <button class="primary" style="margin-top:10px;width:100%" id="s_go">Scan selected (fast list)</button>
+      <button style="margin-top:6px;width:100%" id="s_deep">Deep scan + deads (slow)</button>
+      <button style="margin-top:6px;width:100%" id="s_rally">Scan alliance rallies</button>
     </div>
   </div>
 
@@ -316,8 +317,21 @@ async function startApp(me) {
     { player_id: +r_player.value, new_rank: +r_rank.value }));
   document.getElementById("l_go").onclick = () => queued(post("/api/control/locate",
     { player_id: +l_player.value }));
-  document.getElementById("s_go").onclick = () => queued(post("/api/control/scan",
-    { kind: s_kind.value, pages: +s_pages.value }));
+  document.getElementById("s_go").onclick = async () => {
+    const pages = +s_pages.value;
+    const kinds = [];
+    if (document.getElementById("s_power").checked) kinds.push("power");
+    if (document.getElementById("s_kp").checked) kinds.push("killpoints");
+    if (!kinds.length) { toast("Pick at least one ranking"); return; }
+    try {
+      for (const k of kinds) await post("/api/control/scan", { kind: k, pages });
+      toast(`Queued ${kinds.length} scan(s)`); loadQueue();
+    } catch (e) { toast("Error: " + e.message); }
+  };
+  document.getElementById("s_deep").onclick = () => queued(post("/api/control/scan-profiles",
+    { pages: +s_pages.value }));
+  document.getElementById("s_rally").onclick = () => queued(post("/api/control/scan-rallies",
+    { pages: +s_pages.value }));
   document.getElementById("o_add").onclick = async () => {
     try {
       await post("/api/auth/users", {

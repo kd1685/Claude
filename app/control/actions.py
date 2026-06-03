@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from ..db import get_conn
 from ..models import TITLES
-from ..services import ingest_scan, record_map_position
+from ..services import ingest_rallies, ingest_scan, record_map_position
 from . import get_adapter
 from .adapter import ActionResult
 
@@ -74,4 +74,25 @@ def scan(kind: str, pages: int) -> ActionResult:
                               device=adapter.status().get("device"))
         res.data["summary"] = summary
         res.detail += f" -> ingested {summary['ingested']} rows (scan #{summary['scan_id']})"
+    return res
+
+
+def scan_profiles(pages: int) -> ActionResult:
+    """Deep scan including dead troops (opens each governor's profile)."""
+    adapter = get_adapter()
+    res = adapter.scan_profiles(pages=pages)
+    if res.ok:
+        summary = ingest_scan("profile", res.data.get("rows", []), source=adapter.name)
+        res.data["summary"] = summary
+        res.detail += f" -> ingested {summary['ingested']} governors (incl. deads)"
+    return res
+
+
+def scan_rallies(pages: int) -> ActionResult:
+    adapter = get_adapter()
+    res = adapter.scan_rallies(pages=pages)
+    if res.ok:
+        summary = ingest_rallies(res.data.get("rows", []), source=adapter.name)
+        res.data["summary"] = summary
+        res.detail += f" -> logged {summary['logged']} new rallies"
     return res

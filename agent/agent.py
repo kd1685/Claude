@@ -61,6 +61,10 @@ def dispatch(kind: str, p: dict) -> ActionResult:
     if kind == "scan_rankings":
         return adapter.scan_rankings(kind=p.get("kind", "power"),
                                      pages=int(p.get("pages", 4)))
+    if kind == "scan_profiles":
+        return adapter.scan_profiles(pages=int(p.get("pages", 10)))
+    if kind == "scan_rallies":
+        return adapter.scan_rallies(pages=int(p.get("pages", 5)))
     return ActionResult(False, f"unknown task kind: {kind}")
 
 

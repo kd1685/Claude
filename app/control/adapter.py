@@ -54,3 +54,14 @@ class AccountAdapter(abc.ABC):
     @abc.abstractmethod
     def scan_rankings(self, *, kind: str, pages: int) -> ActionResult:
         """Read the rankings list. data -> {'rows': [ {name, value, ...} ]}."""
+
+    @abc.abstractmethod
+    def scan_rallies(self, *, pages: int) -> ActionResult:
+        """Read the alliance war/rally reports. data -> {'rows': [ {leader_name,
+        target_label, status, ...} ]}."""
+
+    @abc.abstractmethod
+    def scan_profiles(self, *, pages: int) -> ActionResult:
+        """Deep scan: open each governor's profile + More Info to read the full
+        stat block including DEAD troops. data -> {'rows': [ {name, governor_id,
+        power, kill_points, t1..t5_kills, deads, rss_assist, rss_gathered} ]}."""

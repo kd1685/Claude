@@ -97,3 +97,11 @@ class RemoteAdapter(AccountAdapter):
     def scan_rankings(self, *, kind, pages) -> ActionResult:
         return self._run("scan_rankings", {"kind": kind, "pages": pages},
                          config.AGENT_SCAN_TIMEOUT)
+
+    def scan_rallies(self, *, pages) -> ActionResult:
+        return self._run("scan_rallies", {"pages": pages}, config.AGENT_SCAN_TIMEOUT)
+
+    def scan_profiles(self, *, pages) -> ActionResult:
+        # Deep scans take much longer (a few seconds per governor).
+        return self._run("scan_profiles", {"pages": pages},
+                         max(config.AGENT_SCAN_TIMEOUT, pages * 90))

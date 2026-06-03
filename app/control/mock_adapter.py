@@ -71,3 +71,31 @@ class MockAdapter(AccountAdapter):
         rows.sort(key=lambda d: d.get(field, 0), reverse=True)
         return ActionResult(True, f"[mock] scanned {len(rows)} rows ({kind})",
                             {"rows": rows})
+
+    def scan_rallies(self, *, pages) -> ActionResult:
+        targets = ["Lvl 5 Fort", "Lvl 6 Fort", "Barbarian Lvl 30", "Enemy Flag"]
+        rows = []
+        for i, name in enumerate(_NAMES[: min(len(_NAMES), pages * 4)]):
+            r = _rng(name + "rally")
+            rows.append({
+                "leader_name": name,
+                "target_label": r.choice(targets),
+                "troops": r.randint(50_000, 600_000),
+                "status": r.choice(["win", "win", "win", "loss"]),
+            })
+        return ActionResult(True, f"[mock] read {len(rows)} rallies", {"rows": rows})
+
+    def scan_profiles(self, *, pages) -> ActionResult:
+        rows = []
+        for i, name in enumerate(_NAMES[: min(len(_NAMES), pages * 5)]):
+            r = _rng(name + "profile")
+            kp = r.randint(5_000_000, 900_000_000)
+            rows.append({
+                "name": name, "governor_id": str(100000 + i),
+                "power": r.randint(8_000_000, 120_000_000),
+                "kill_points": kp,
+                "t4_kills": int(kp * 0.4 / 20), "t5_kills": int(kp * 0.5 / 30),
+                "deads": r.randint(0, 3_000_000),
+                "rss_assist": r.randint(0, 500_000),
+            })
+        return ActionResult(True, f"[mock] deep-scanned {len(rows)} profiles", {"rows": rows})

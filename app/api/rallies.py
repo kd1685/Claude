@@ -47,6 +47,32 @@ def list_rallies(frm: str | None = None, to: str | None = None, limit: int = 500
             "by_day": [dict(r) for r in agg]}
 
 
+@router.get("/leaderboard")
+def rally_leaderboard(frm: str | None = None, to: str | None = None, limit: int = 100):
+    """Rank alliance members by rallies led over a date range."""
+    to = to or dt.date.today().isoformat()
+    frm = frm or (dt.date.fromisoformat(to) - dt.timedelta(days=30)).isoformat()
+    rows = get_conn().execute(
+        """SELECT leader_name,
+                  COUNT(*) AS rallies,
+                  SUM(COALESCE(troops,0)) AS troops,
+                  SUM(status='win') AS wins
+           FROM rallies
+           WHERE captured_at BETWEEN ? AND ? AND leader_name IS NOT NULL AND leader_name<>''
+           GROUP BY leader_name
+           ORDER BY rallies DESC, troops DESC
+           LIMIT ?""",
+        (frm, to, limit),
+    ).fetchall()
+    out = []
+    for i, r in enumerate(rows, 1):
+        d = dict(r)
+        d["position"] = i
+        d["win_rate"] = round(100 * (d["wins"] or 0) / d["rallies"]) if d["rallies"] else 0
+        out.append(d)
+    return {"from": frm, "to": to, "rows": out}
+
+
 @router.post("")
 def create_rally(body: RallyIn):
     data = body.model_dump()
