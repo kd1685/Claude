@@ -56,6 +56,7 @@
       <div class="label">Locate on map</div>
       <div class="field" style="margin-top:8px"><select id="l_player"></select></div>
       <button class="primary" style="margin-top:10px;width:100%" id="l_go">Locate</button>
+      <button style="margin-top:6px;width:100%" id="l_all">Locate all tracked</button>
     </div>
 
     <div class="card">
@@ -97,7 +98,7 @@
   <div class="panel" id="schedPanel" style="display:none">
     <h2>Automatic scans <span class="muted" style="font-size:12px">· admin only</span></h2>
     <div class="row" style="align-items:end;margin-bottom:12px">
-      <div class="field"><label>Ranking</label><select id="sc_kind"><option value="power">Power</option><option value="killpoints">Kill Points</option><option value="dead">Dead</option></select></div>
+      <div class="field"><label>Job</label><select id="sc_kind"><option value="power">Power (list)</option><option value="killpoints">Kill Points (list)</option><option value="profiles">Deep scan + deads</option><option value="rallies">Alliance rallies</option></select></div>
       <div class="field"><label>Time (UTC)</label><input id="sc_time" type="time" value="02:00" /></div>
       <div class="field"><label>Pages</label><input id="sc_pages" type="number" value="4" min="1" max="50" style="width:90px" /></div>
       <button class="primary" id="sc_add">Add schedule</button>
@@ -317,6 +318,10 @@ async function startApp(me) {
     { player_id: +r_player.value, new_rank: +r_rank.value }));
   document.getElementById("l_go").onclick = () => queued(post("/api/control/locate",
     { player_id: +l_player.value }));
+  document.getElementById("l_all").onclick = async () => {
+    try { const r = await post("/api/control/locate-all"); toast(`Queued ${r.queued} locates`); loadQueue(); }
+    catch (e) { toast("Error: " + e.message); }
+  };
   document.getElementById("s_go").onclick = async () => {
     const pages = +s_pages.value;
     const kinds = [];

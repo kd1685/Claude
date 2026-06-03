@@ -61,6 +61,15 @@ def locate(body: LocateIn, user=Depends(require_action("locate"))):
     return _enqueue("locate", user, player_id=body.player_id)
 
 
+@router.post("/locate-all")
+def locate_all(user=Depends(require_action("locate"))):
+    """Queue an in-game name search for every tracked governor, to map them."""
+    rows = get_conn().execute("SELECT id FROM players ORDER BY id").fetchall()
+    for r in rows:
+        _enqueue("locate", user, player_id=r["id"])
+    return {"queued": len(rows)}
+
+
 @router.post("/scan")
 def scan(body: ScanJobIn, user=Depends(require_action("scan"))):
     return _enqueue("scan", user, params={"kind": body.kind, "pages": body.pages})

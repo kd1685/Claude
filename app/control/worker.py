@@ -88,8 +88,14 @@ def _check_schedules() -> None:
             continue
         due = (now.hour, now.minute) >= (s["at_hour"], s["at_minute"])
         if due:
-            enqueue("scan", params={"kind": s["kind"], "pages": s["pages"]},
-                    issued_by_name=f"schedule #{s['id']}")
+            who = f"schedule #{s['id']}"
+            kind = s["kind"]
+            if kind == "profiles":
+                enqueue("scan_profiles", params={"pages": s["pages"]}, issued_by_name=who)
+            elif kind == "rallies":
+                enqueue("scan_rallies", params={"pages": s["pages"]}, issued_by_name=who)
+            else:
+                enqueue("scan", params={"kind": kind, "pages": s["pages"]}, issued_by_name=who)
             conn.execute("UPDATE scan_schedules SET last_run_date=? WHERE id=?",
                          (today, s["id"]))
             conn.commit()

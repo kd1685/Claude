@@ -212,6 +212,14 @@ def _advanced(client):
     lb = client.get("/api/rallies/leaderboard").json()
     assert "rows" in lb
 
+    # Locate-all queues a locate per tracked governor.
+    assert client.post("/api/control/locate-all").json()["queued"] >= 1
+    # Deep scan + rallies are schedulable.
+    assert client.post("/api/schedules",
+                       json={"kind": "profiles", "at_hour": 2, "at_minute": 30}).status_code == 200
+    assert client.post("/api/schedules",
+                       json={"kind": "rallies", "at_hour": 3}).status_code == 200
+
 
 def test_remote_agent():
     """RemoteAdapter hands a task to the agent (via the API) and gets the result."""

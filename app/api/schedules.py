@@ -6,7 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from ..auth import require_admin, require_ready
 from ..db import get_conn
 from ..models import ScheduleIn
-from ..services import VALID_KINDS
+
+# Schedulable jobs: list scans (power/killpoints), the deep deads scan, rallies.
+SCHEDULE_KINDS = {"power", "killpoints", "dead", "profiles", "rallies"}
 
 router = APIRouter(prefix="/api/schedules", tags=["schedules"])
 
@@ -20,8 +22,8 @@ def list_schedules(user=Depends(require_ready)):
 
 @router.post("")
 def create_schedule(body: ScheduleIn, admin=Depends(require_admin)):
-    if body.kind not in VALID_KINDS:
-        raise HTTPException(400, f"kind must be one of {sorted(VALID_KINDS)}")
+    if body.kind not in SCHEDULE_KINDS:
+        raise HTTPException(400, f"kind must be one of {sorted(SCHEDULE_KINDS)}")
     conn = get_conn()
     cur = conn.execute(
         "INSERT INTO scan_schedules (kind, at_hour, at_minute, pages, created_by) "
