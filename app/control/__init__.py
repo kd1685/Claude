@@ -16,6 +16,9 @@ def get_adapter() -> AccountAdapter:
     if config.CONTROL_BACKEND == "adb":
         from .adb_adapter import AdbAdapter  # lazy: avoids importing heavy deps
         _adapter = AdbAdapter()
+    elif config.CONTROL_BACKEND == "remote":
+        from .remote_adapter import RemoteAdapter
+        _adapter = RemoteAdapter()
     else:
         _adapter = MockAdapter()
     return _adapter

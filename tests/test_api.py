@@ -8,6 +8,7 @@ os.environ["DB_PATH"] = os.path.join(tempfile.mkdtemp(), "test.db")
 os.environ["CONTROL_BACKEND"] = "mock"
 os.environ["ADMIN_USERNAME"] = "king"
 os.environ["ADMIN_PASSWORD"] = "s3cret"
+os.environ["AGENT_TOKEN"] = "agentsecret"
 os.environ["WORKER_INTERVAL"] = "0.2"   # fast loop so rotation steps quickly in tests
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -201,3 +202,40 @@ def _advanced(client):
                       json={"name": "KvK1", "start_date": "2026-05-01", "end_date": "2026-05-20"}
                       ).json()["id"]
     assert any(e["id"] == eid for e in client.get("/api/events").json())
+
+
+def test_remote_agent():
+    """RemoteAdapter hands a task to the agent (via the API) and gets the result."""
+    import threading
+    from app.control.remote_adapter import RemoteAdapter
+
+    with TestClient(app) as client:
+        out = {}
+
+        def do_scan():
+            out["res"] = RemoteAdapter().scan_rankings(kind="power", pages=1)
+
+        t = threading.Thread(target=do_scan)
+        t.start()
+
+        hdr = {"X-Agent-Token": "agentsecret"}
+        # Wrong token is rejected.
+        assert client.post("/api/agent/poll", headers={"X-Agent-Token": "nope"}).status_code == 401
+
+        # Act as the agent: claim the task the RemoteAdapter just created.
+        task = None
+        for _ in range(50):
+            task = client.post("/api/agent/poll", headers=hdr).json()["task"]
+            if task:
+                break
+            time.sleep(0.1)
+        assert task and task["kind"] == "scan_rankings" and task["params"]["kind"] == "power"
+
+        # Return a result; the blocked RemoteAdapter call should unblock with it.
+        client.post("/api/agent/complete", headers=hdr, json={
+            "task_id": task["id"], "ok": True, "detail": "scanned 1",
+            "data": {"rows": [{"name": "Zephyr", "power": 12345}]},
+        })
+        t.join(timeout=10)
+        assert out["res"].ok
+        assert out["res"].data["rows"][0]["name"] == "Zephyr"

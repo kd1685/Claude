@@ -38,6 +38,7 @@ class Config:
     KINGDOM_ID: str = _get("KINGDOM_ID", "1685")
 
     CONTROL_BACKEND: str = _get("CONTROL_BACKEND", "mock").lower()
+    # mock = simulated | adb = local device | remote = a PC agent drives the game
     ADB_PATH: str = _get("ADB_PATH", "adb")
     ADB_SERIAL: str = _get("ADB_SERIAL", "")
     ADB_CONNECT: str = _get("ADB_CONNECT", "")
@@ -45,6 +46,12 @@ class Config:
     TESSERACT_CMD: str = _get("TESSERACT_CMD", "tesseract")
 
     WORKER_INTERVAL: float = float(_get("WORKER_INTERVAL", "3"))
+
+    # Shared secret the PC agent uses to authenticate (CONTROL_BACKEND=remote).
+    AGENT_TOKEN: str = _get("AGENT_TOKEN", "")
+    # How long the server waits for the agent to finish one device action (sec).
+    AGENT_TASK_TIMEOUT: float = float(_get("AGENT_TASK_TIMEOUT", "120"))
+    AGENT_SCAN_TIMEOUT: float = float(_get("AGENT_SCAN_TIMEOUT", "900"))
 
     # ---- Control-page auth (data pages stay public) ----
     # First-run bootstrap admin officer. Created only if no users exist yet.

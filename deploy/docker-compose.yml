@@ -34,9 +34,12 @@ services:
     expose:
       - "8000"                      # internal only; reached via the caddy proxy
     environment:
-      CONTROL_BACKEND: adb
+      # 'remote' = a PC agent (LDPlayer) drives the game; 'adb' = local emulator.
+      CONTROL_BACKEND: ${CONTROL_BACKEND:-adb}
       ADB_CONNECT: android:5555
       ADB_SERIAL: android:5555
+      # Shared secret for the PC agent (only used when CONTROL_BACKEND=remote).
+      AGENT_TOKEN: ${AGENT_TOKEN:-}
       KINGDOM_ID: "1685"
       UI_PROFILE: app/profiles/rok_720p.json
       DB_PATH: /data/rok1685.db

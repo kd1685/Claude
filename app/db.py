@@ -152,6 +152,30 @@ CREATE TABLE IF NOT EXISTS events (
     created_at    TEXT DEFAULT (datetime('now'))
 );
 
+-- Device actions handed to a remote PC agent (CONTROL_BACKEND=remote). The
+-- server creates a task and waits; the agent claims it, runs it in LDPlayer,
+-- and posts the result back.
+CREATE TABLE IF NOT EXISTS device_tasks (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind         TEXT NOT NULL,                 -- give_title | change_rank | locate | scan_rankings
+    params       TEXT,                          -- json
+    status       TEXT NOT NULL DEFAULT 'pending', -- pending | running | done | failed
+    ok           INTEGER,
+    result       TEXT,                          -- json (detail + data)
+    error        TEXT,
+    created_at   TEXT DEFAULT (datetime('now')),
+    claimed_at   TEXT,
+    finished_at  TEXT
+);
+
+-- Single-row heartbeat so the UI can show whether the PC agent is online.
+CREATE TABLE IF NOT EXISTS agent_heartbeat (
+    id           INTEGER PRIMARY KEY CHECK (id = 1),
+    last_seen    TEXT,
+    info         TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_tasks_status ON device_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_snapshots_date ON snapshots(captured_at);
 CREATE INDEX IF NOT EXISTS idx_snapshots_player ON snapshots(player_id);
 CREATE INDEX IF NOT EXISTS idx_rallies_date ON rallies(captured_at);
