@@ -1,18 +1,24 @@
 {
   "name": "rok_720p",
   "_comment": [
-    "Calibration profile for a 1280x720 LANDSCAPE Rise of Kingdoms client.",
-    "These coordinates are SENSIBLE DEFAULTS, not exact — every emulator/skin",
-    "differs slightly. Calibrate with: scripts/calibrate.py (taps where you click)",
-    "or read pixel coords from a screenshot. OCR 'region' is [x, y, width, height]."
+    "Calibrated for LDPlayer at 1280x720 LANDSCAPE. Rankings path: profile",
+    "portrait (top-left) -> Rankings -> Individual Power/Kills. Dead-troop",
+    "ranking does not exist in this menu, so only power + killpoints scan.",
+    "Title/rank/locate anchors below are first-guesses — calibrate before use."
   ],
   "screen": {"width": 1280, "height": 720},
 
   "anchors": {
+    "profile_avatar":  [40, 35],
+    "rankings_button": [372, 600],
+    "tab_power":       [310, 410],
+    "tab_killpoints":  [640, 410],
+    "tab_dead":        [310, 410],
+    "close_x":         [1115, 43],
+
     "search_button":   [48, 470],
     "search_field":    [640, 120],
     "first_result":    [640, 220],
-    "coords_readout":  [1090, 28],
 
     "city_center":     [640, 360],
     "city_title_icon": [560, 300],
@@ -20,11 +26,6 @@
     "title_duke":      [580, 430],
     "title_architect": [690, 430],
     "title_scientist": [800, 430],
-
-    "rankings_button": [1180, 250],
-    "tab_power":       [430, 150],
-    "tab_killpoints":  [640, 150],
-    "tab_dead":        [850, 150],
 
     "alliance_button": [1180, 360],
     "alliance_members":[180, 200],
@@ -64,24 +65,27 @@
       {"back": true}, {"wait": 400}, {"back": true}
     ],
     "open_rankings": [
-      {"tap": "rankings_button"}, {"wait": 1500},
-      {"tap_var": "tab_point"}, {"wait": 1200}
+      {"tap": "profile_avatar"}, {"wait": 1800},
+      {"tap": "rankings_button"}, {"wait": 1800},
+      {"tap_var": "tab_point"}, {"wait": 1800}
     ],
     "close_rankings": [
-      {"back": true}, {"wait": 400}, {"back": true}
+      {"tap": "close_x"}, {"wait": 700},
+      {"tap": "close_x"}, {"wait": 700},
+      {"tap": "close_x"}, {"wait": 700}
     ]
   },
 
   "rankings": {
-    "_comment": "Per-visible-row OCR regions [x,y,w,h] for name + value, plus a scroll gesture.",
-    "scroll": [640, 600, 640, 250, 700],
+    "_comment": "LDPlayer 720p Individual Power/Kills list: 6 visible rows, name + value regions.",
+    "scroll": [640, 600, 640, 280, 600],
     "rows": [
-      {"name": [330, 168, 360, 44], "value": [900, 168, 320, 44]},
-      {"name": [330, 232, 360, 44], "value": [900, 232, 320, 44]},
-      {"name": [330, 296, 360, 44], "value": [900, 296, 320, 44]},
-      {"name": [330, 360, 360, 44], "value": [900, 360, 320, 44]},
-      {"name": [330, 424, 360, 44], "value": [900, 424, 320, 44]},
-      {"name": [330, 488, 360, 44], "value": [900, 488, 320, 44]}
+      {"name": [285, 206, 440, 34], "value": [890, 206, 220, 34]},
+      {"name": [285, 287, 440, 34], "value": [890, 287, 220, 34]},
+      {"name": [285, 367, 440, 34], "value": [890, 367, 220, 34]},
+      {"name": [285, 448, 440, 34], "value": [890, 448, 220, 34]},
+      {"name": [285, 528, 440, 34], "value": [890, 528, 220, 34]},
+      {"name": [285, 609, 440, 34], "value": [890, 609, 220, 34]}
     ]
   }
 }
