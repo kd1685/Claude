@@ -137,9 +137,11 @@
   </div>
 
   <div class="panel">
-    <h2>Command queue / audit log <span class="muted" id="qstate" style="font-size:12px"></span></h2>
+    <h2>Command queue / audit log <span class="muted" id="qstate" style="font-size:12px"></span>
+      <button id="q_cancel_all" style="float:right;font-size:12px;padding:4px 10px;border-color:var(--red);color:var(--red)">Cancel all pending</button>
+    </h2>
     <table>
-      <thead><tr><th>#</th><th>Action</th><th>Target</th><th>By</th><th>Status</th><th>Result / error</th><th>When</th></tr></thead>
+      <thead><tr><th>#</th><th>Action</th><th>Target</th><th>By</th><th>Status</th><th>Result / error</th><th>When</th><th></th></tr></thead>
       <tbody id="queue"></tbody>
     </table>
   </div>
@@ -169,13 +171,20 @@ async function loadQueue() {
     let res = "—";
     if (r.error) res = r.error;
     else if (r.result) { try { res = JSON.parse(r.result).detail || ""; } catch { res = r.result; } }
+    const cancel = r.status === "pending"
+      ? `<button data-cancel="${r.id}" style="font-size:11px;padding:3px 7px">Cancel</button>` : "";
     return `<tr><td class="muted">${r.id}</td><td>${r.kind}</td>
       <td>${r.player_name || (r.kind==='scan'?'(rankings)':'—')}</td>
       <td>${r.issued_by_name || "—"}</td>
       <td class="status-${r.status}">${r.status}</td>
       <td class="muted">${res}</td>
-      <td class="muted">${(r.finished_at||r.started_at||r.created_at||"").replace("T"," ")}</td></tr>`;
-  }).join("") || `<tr><td colspan="7" class="muted">No commands yet.</td></tr>`;
+      <td class="muted">${(r.finished_at||r.started_at||r.created_at||"").replace("T"," ")}</td>
+      <td>${cancel}</td></tr>`;
+  }).join("") || `<tr><td colspan="8" class="muted">No commands yet.</td></tr>`;
+  document.querySelectorAll('#queue button[data-cancel]').forEach(b => b.onclick = async () => {
+    try { await post(`/api/control/commands/${b.dataset.cancel}/cancel`); loadQueue(); }
+    catch (e) { toast("Error: " + e.message); }
+  });
 }
 
 async function loadOfficers() {
@@ -333,6 +342,11 @@ async function startApp(me) {
       for (const k of kinds) await post("/api/control/scan", { kind: k, pages });
       toast(`Queued ${kinds.length} scan(s)`); loadQueue();
     } catch (e) { toast("Error: " + e.message); }
+  };
+  document.getElementById("q_cancel_all").onclick = async () => {
+    try { const r = await post("/api/control/commands/cancel-pending");
+      toast(`Cancelled ${r.cancelled} pending`); loadQueue(); }
+    catch (e) { toast("Error: " + e.message); }
   };
   document.getElementById("s_deep").onclick = () => queued(post("/api/control/scan-profiles",
     { pages: +s_pages.value }));

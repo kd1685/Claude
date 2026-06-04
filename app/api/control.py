@@ -141,6 +141,33 @@ def _audit_query(kind, officer, frm, to, limit):
     return sql, (*args, limit)
 
 
+@router.post("/commands/cancel-pending")
+def cancel_pending(user=Depends(require_ready)):
+    """Cancel every queued (not-yet-started) command."""
+    conn = get_conn()
+    cur = conn.execute(
+        "UPDATE commands SET status='cancelled', finished_at=datetime('now') "
+        "WHERE status='pending'")
+    conn.commit()
+    return {"cancelled": cur.rowcount}
+
+
+@router.post("/commands/{command_id}/cancel")
+def cancel_command(command_id: int, user=Depends(require_ready)):
+    """Cancel a single queued command (only while it's still pending)."""
+    conn = get_conn()
+    row = conn.execute("SELECT status FROM commands WHERE id=?", (command_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "command not found")
+    if row["status"] != "pending":
+        raise HTTPException(400, f"cannot cancel a {row['status']} command")
+    conn.execute(
+        "UPDATE commands SET status='cancelled', finished_at=datetime('now') WHERE id=?",
+        (command_id,))
+    conn.commit()
+    return {"ok": True}
+
+
 @router.get("/commands")
 def commands(limit: int = 50, kind: str | None = None, officer: str | None = None,
              frm: str | None = Query(default=None, alias="from"),

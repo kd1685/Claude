@@ -220,6 +220,10 @@ def _advanced(client):
     assert client.post("/api/schedules",
                        json={"kind": "rallies", "at_hour": 3}).status_code == 200
 
+    # Cancel endpoints: missing command -> 404; cancel-pending returns a count.
+    assert client.post("/api/control/commands/999999/cancel").status_code == 404
+    assert "cancelled" in client.post("/api/control/commands/cancel-pending").json()
+
 
 def test_remote_agent():
     """RemoteAdapter hands a task to the agent (via the API) and gets the result."""
