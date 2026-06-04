@@ -1061,7 +1061,9 @@ class ChartPanel:
         self._on_tf_change   = None  # kept for compat but no longer used
         self._tf_candles     = {}    # per-TF candle cache
 
-        tf_opts = [("1m","Min1"),("5m","Min5"),("15m","Min15"),("1h","Hour1"),("1d","Day1")]
+        tf_opts = [("1m","Min1"),("5m","Min5"),("15m","Min15"),("30m","Min30"),
+                   ("1h","Hour1"),("4h","Hour4"),("1d","Day1")]
+        self._tf_values = [tv for _, tv in tf_opts]
         for label, tf_val in tf_opts:
             b = tk.Button(toolbar, text=label,
                           font=("Consolas", 7, "bold"),
@@ -1086,6 +1088,8 @@ class ChartPanel:
         self._zoom_lbl = tk.Label(toolbar, text="60 candles", font=("Consolas", 7),
                                    fg=DIM, bg=BG3)
         self._zoom_lbl.pack(side="right", padx=6)
+        tk.Label(toolbar, text="wheel: pan · ctrl+wheel: zoom",
+                 font=("Consolas", 7), fg=DIM, bg=BG3).pack(side="right", padx=4)
 
         plt.style.use("dark_background")
         self.fig = plt.Figure(figsize=(8, 5), facecolor=BG4)
@@ -1104,21 +1108,38 @@ class ChartPanel:
         self.canvas = FigureCanvasTkAgg(self.fig, master=parent)
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
 
-        # Mouse scroll for zoom, drag not needed (use buttons)
-        self.canvas.get_tk_widget().bind("<MouseWheel>",
-            lambda e: self._zoom(-5 if e.delta > 0 else 5))
-        self.canvas.get_tk_widget().bind("<Button-4>",
-            lambda e: self._zoom(-5))   # Linux scroll up
-        self.canvas.get_tk_widget().bind("<Button-5>",
-            lambda e: self._zoom(+5))   # Linux scroll down
+        # ── Mouse wheel:  plain = pan through time,  Ctrl = zoom ──────────────
+        w = self.canvas.get_tk_widget()
+
+        def _on_wheel(e):
+            # On Windows/Mac e.delta is ±120 multiples; Ctrl held → zoom, else pan
+            up = e.delta > 0
+            if e.state & 0x0004:   # Ctrl pressed
+                self._zoom(-5 if up else 5)
+            else:
+                # Scroll wheel up = look back in time (older), down = toward live edge
+                self._scroll(+5 if up else -5)
+
+        def _on_wheel_linux(e, up):
+            if e.state & 0x0004:   # Ctrl
+                self._zoom(-5 if up else 5)
+            else:
+                self._scroll(+5 if up else -5)
+
+        w.bind("<MouseWheel>", _on_wheel)                              # Win / Mac
+        w.bind("<Button-4>", lambda e: _on_wheel_linux(e, True))      # Linux up
+        w.bind("<Button-5>", lambda e: _on_wheel_linux(e, False))     # Linux down
+        # Ctrl+wheel explicit (some platforms route Control- separately)
+        w.bind("<Control-MouseWheel>", lambda e: self._zoom(-5 if e.delta > 0 else 5))
+        w.bind("<Control-Button-4>",   lambda e: self._zoom(-5))
+        w.bind("<Control-Button-5>",   lambda e: self._zoom(+5))
         self._placeholder()
 
     def _set_tf(self, tf):
         self._chart_tf = tf
         self._chart_offset = 0   # jump to live edge on TF change
         # Update button highlights
-        tf_opts = ["Min1","Min5","Min15","Hour1","Day1"]
-        for t in tf_opts:
+        for t in getattr(self, "_tf_values", ["Min1","Min5","Min15","Min30","Hour1","Hour4","Day1"]):
             btn = getattr(self, f"_tf_btn_{t}", None)
             if btn:
                 btn.config(bg=BLUE if t == tf else BG3,
@@ -2567,7 +2588,7 @@ class HermesBotApp:
             for pair in (self._active_pairs() if hasattr(self, "_pair_vars") else PAIRS):
                 try:
                     tf  = self.tf_cb.get() if hasattr(self, 'tf_cb') else "Min5"
-                    can = get_klines(pair, tf, 60)
+                    can = get_klines(pair, tf, 200)
                     tkr = get_ticker(pair)
                     sig = compute_signals(can, tkr, self._thresh())
                     if sig is None: continue
@@ -2621,7 +2642,7 @@ class HermesBotApp:
         def _go():
             try:
                 tf  = self.tf_cb.get()
-                can = get_klines(pair, tf, 60)
+                can = get_klines(pair, tf, 200)
                 tkr = get_ticker(pair)
                 sig = compute_signals(can, tkr, self._thresh())
                 self.pair_candles[pair] = can
@@ -3582,7 +3603,7 @@ class HermesBotApp:
                         return
                     try:
                         tkr_ = get_ticker(p)
-                        can_ = get_klines(p, tf, 60)
+                        can_ = get_klines(p, tf, 200)
 
                         if dual_mode and tf != "Min1":
                             # ── Sequential dual TF (only when Dual TF enabled) ──────
