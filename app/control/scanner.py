@@ -174,13 +174,18 @@ def scan_profiles_via_adb(adapter, *, pages: int) -> ActionResult:
             mi_close = a.get("more_info_close", a.get("close_x", [1113, 44]))
             prof_close = a.get("profile_view_close", a.get("profile_close", mi_close))
             title_region = cfg.get("title_region", [360, 40, 560, 55])
-            driver.tap(int(mi_close[0]), int(mi_close[1]))
-            time.sleep(1.2)                       # let More Info close + profile settle
-            for _ in range(4):
-                driver.tap(int(prof_close[0]), int(prof_close[1]))
-                time.sleep(1.0)
+            driver.tap(int(mi_close[0]), int(mi_close[1]))   # More Info -> profile
+            time.sleep(1.6)                                  # let it settle
+            driver.tap(int(prof_close[0]), int(prof_close[1]))  # profile -> list
+            time.sleep(1.4)
+            # Re-tap ONLY while a profile/More Info title is still visible (so we
+            # never over-tap onto the rankings list once it's actually closed).
+            for _ in range(3):
                 title = ocr.ocr_region(driver.screencap(), title_region).lower()
-                if "rank" in title:               # back on the rankings list
+                if "governor" in title or "more" in title:
+                    driver.tap(int(prof_close[0]), int(prof_close[1]))
+                    time.sleep(1.2)
+                else:
                     break
         if stopped:
             break

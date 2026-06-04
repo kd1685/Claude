@@ -36,6 +36,7 @@ _load_env(ROOT / "agent" / "agent.env")
 SERVER_URL = os.environ.get("SERVER_URL", "http://localhost:8000").rstrip("/")
 AGENT_TOKEN = os.environ.get("AGENT_TOKEN", "")
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "2"))
+AGENT_VERSION = "2026.06.04-verify-close"   # bump on each code change
 
 # Configure the local ADB adapter (via env) before importing the app config.
 os.environ.setdefault("CONTROL_BACKEND", "adb")
@@ -94,7 +95,7 @@ def main() -> int:
     if not AGENT_TOKEN:
         print("ERROR: set AGENT_TOKEN in agent/agent.env (must match the server).")
         return 1
-    print(f"Kingdom 1685 agent → {SERVER_URL}")
+    print(f"Kingdom 1685 agent {AGENT_VERSION} → {SERVER_URL}")
     conn = adapter.connect()
     print(f"Emulator: {conn.detail}")
     if not conn.ok:
