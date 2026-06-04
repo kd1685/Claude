@@ -167,15 +167,21 @@ def scan_profiles_via_adb(adapter, *, pages: int) -> ActionResult:
                 row["name"] = nm[0].strip() if nm else ""
             if row.get("name") and len(row) > 1:
                 seen[row["name"]] = row
-            # Close back to the rankings list by tapping the X buttons (back-key
-            # is unreliable on these panels): More Info -> profile -> list.
+            # Close back to the rankings list: More Info X -> profile X. The
+            # profile re-appears with an animation that can absorb a too-early
+            # tap, so verify via the title and retry until we're on the list.
             a = adapter.profile.anchors
-            mi_close = a.get("more_info_close", a.get("close_x", [1115, 43]))
+            mi_close = a.get("more_info_close", a.get("close_x", [1113, 44]))
             prof_close = a.get("profile_view_close", a.get("profile_close", mi_close))
+            title_region = cfg.get("title_region", [360, 40, 560, 55])
             driver.tap(int(mi_close[0]), int(mi_close[1]))
-            time.sleep(0.8)
-            driver.tap(int(prof_close[0]), int(prof_close[1]))
-            time.sleep(0.8)
+            time.sleep(1.2)                       # let More Info close + profile settle
+            for _ in range(4):
+                driver.tap(int(prof_close[0]), int(prof_close[1]))
+                time.sleep(1.0)
+                title = ocr.ocr_region(driver.screencap(), title_region).lower()
+                if "rank" in title:               # back on the rankings list
+                    break
         if stopped:
             break
         scroll = cfg.get("scroll")

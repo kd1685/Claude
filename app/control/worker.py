@@ -119,10 +119,24 @@ def _loop() -> None:
             _stop.wait(config.WORKER_INTERVAL)
 
 
+def _clear_stale() -> None:
+    """On startup nothing is actually running, so fail any orphaned 'running'
+    commands/device-tasks left over from a crash or restart."""
+    conn = get_conn()
+    conn.execute(
+        "UPDATE commands SET status='failed', error='interrupted (restart)', "
+        "finished_at=datetime('now') WHERE status='running'")
+    conn.execute(
+        "UPDATE device_tasks SET status='cancelled', error='interrupted (restart)', "
+        "finished_at=datetime('now') WHERE status='running'")
+    conn.commit()
+
+
 def start() -> None:
     global _thread
     if _thread and _thread.is_alive():
         return
+    _clear_stale()
     _stop.clear()
     _thread = threading.Thread(target=_loop, name="control-worker", daemon=True)
     _thread.start()

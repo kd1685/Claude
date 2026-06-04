@@ -49,6 +49,13 @@ def poll(x_agent_token: str | None = Header(default=None), info: str | None = No
     _auth(x_agent_token)
     _beat(info)
     conn = get_conn()
+    # The agent only polls when it is idle, so any 'running' task right now is
+    # orphaned (e.g. the agent was restarted mid-scan). Fail it so the server
+    # stops waiting and the queue moves on.
+    conn.execute(
+        "UPDATE device_tasks SET status='failed', error='agent restarted', "
+        "finished_at=datetime('now') WHERE status='running'")
+    conn.commit()
     row = conn.execute(
         "SELECT * FROM device_tasks WHERE status='pending' ORDER BY id LIMIT 1"
     ).fetchone()

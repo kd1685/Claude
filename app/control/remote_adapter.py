@@ -38,13 +38,14 @@ class RemoteAdapter(AccountAdapter):
         conn.commit()
 
         deadline = time.time() + timeout
+        cancel_since = None
         while time.time() < deadline:
             conn.rollback()  # ensure a fresh read of the agent's commit
             row = conn.execute(
-                "SELECT status, ok, result, error FROM device_tasks WHERE id=?",
-                (task_id,),
+                "SELECT status, ok, result, error, cancel_requested "
+                "FROM device_tasks WHERE id=?", (task_id,),
             ).fetchone()
-            if row and row["status"] in ("done", "failed"):
+            if row and row["status"] in ("done", "failed", "cancelled"):
                 data = {}
                 detail = ""
                 if row["result"]:
@@ -54,7 +55,21 @@ class RemoteAdapter(AccountAdapter):
                         data = payload.get("data", {}) or {}
                     except Exception:
                         detail = row["result"]
-                return ActionResult(bool(row["ok"]), detail or (row["error"] or ""), data)
+                ok = bool(row["ok"]) and row["status"] != "cancelled"
+                return ActionResult(ok, detail or (row["error"] or "stopped"), data)
+            # If a stop was requested, give a live agent ~12s to finish the
+            # current item and post its partial result; otherwise force-terminate
+            # (handles the case where the agent has gone away).
+            if row and row["cancel_requested"]:
+                if cancel_since is None:
+                    cancel_since = time.time()
+                elif time.time() - cancel_since > 12:
+                    conn.execute(
+                        "UPDATE device_tasks SET status='cancelled', "
+                        "error='stopped by user', finished_at=datetime('now') WHERE id=?",
+                        (task_id,))
+                    conn.commit()
+                    return ActionResult(False, "scan stopped")
             time.sleep(0.5)
 
         conn.execute(
