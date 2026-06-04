@@ -1055,6 +1055,8 @@ class ChartPanel:
         self._chart_tf     = "Min5"
         self._chart_zoom   = 60   # number of candles visible
         self._chart_offset = 0    # candles from right (0 = live edge)
+        self._price_pan    = 0.0  # vertical price pan (fraction of range; 0 = auto-centre)
+        self._price_scale  = 1.0  # vertical price zoom (1.0 = auto-fit)
         self._last_candles   = []
         self._last_signals   = None
         self._last_positions = []
@@ -1088,7 +1090,7 @@ class ChartPanel:
         self._zoom_lbl = tk.Label(toolbar, text="60 candles", font=("Consolas", 7),
                                    fg=DIM, bg=BG3)
         self._zoom_lbl.pack(side="right", padx=6)
-        tk.Label(toolbar, text="wheel: pan · ctrl+wheel: zoom",
+        tk.Label(toolbar, text="wheel: pan · ctrl: zoom · shift: price",
                  font=("Consolas", 7), fg=DIM, bg=BG3).pack(side="right", padx=4)
 
         plt.style.use("dark_background")
@@ -1111,28 +1113,25 @@ class ChartPanel:
         # ── Mouse wheel:  plain = pan through time,  Ctrl = zoom ──────────────
         w = self.canvas.get_tk_widget()
 
-        def _on_wheel(e):
-            # On Windows/Mac e.delta is ±120 multiples; Ctrl held → zoom, else pan
-            up = e.delta > 0
-            if e.state & 0x0004:   # Ctrl pressed
+        def _wheel(up, state):
+            # Ctrl → time zoom; Shift → price pan; plain → time pan
+            if state & 0x0004:        # Ctrl
                 self._zoom(-5 if up else 5)
-            else:
-                # Scroll wheel up = look back in time (older), down = toward live edge
+            elif state & 0x0001:      # Shift → vertical price pan
+                self._pan_price(+0.08 if up else -0.08)
+            else:                     # plain → horizontal time pan
                 self._scroll(+5 if up else -5)
 
-        def _on_wheel_linux(e, up):
-            if e.state & 0x0004:   # Ctrl
-                self._zoom(-5 if up else 5)
-            else:
-                self._scroll(+5 if up else -5)
-
-        w.bind("<MouseWheel>", _on_wheel)                              # Win / Mac
-        w.bind("<Button-4>", lambda e: _on_wheel_linux(e, True))      # Linux up
-        w.bind("<Button-5>", lambda e: _on_wheel_linux(e, False))     # Linux down
-        # Ctrl+wheel explicit (some platforms route Control- separately)
+        w.bind("<MouseWheel>",  lambda e: _wheel(e.delta > 0, e.state))   # Win / Mac
+        w.bind("<Button-4>",    lambda e: _wheel(True,  e.state))         # Linux up
+        w.bind("<Button-5>",    lambda e: _wheel(False, e.state))         # Linux down
+        # Explicit modifier bindings for platforms that route them separately
         w.bind("<Control-MouseWheel>", lambda e: self._zoom(-5 if e.delta > 0 else 5))
         w.bind("<Control-Button-4>",   lambda e: self._zoom(-5))
         w.bind("<Control-Button-5>",   lambda e: self._zoom(+5))
+        w.bind("<Shift-MouseWheel>",   lambda e: self._pan_price(+0.08 if e.delta > 0 else -0.08))
+        w.bind("<Shift-Button-4>",     lambda e: self._pan_price(+0.08))
+        w.bind("<Shift-Button-5>",     lambda e: self._pan_price(-0.08))
         self._placeholder()
 
     def _set_tf(self, tf):
@@ -1183,9 +1182,21 @@ class ChartPanel:
         self._chart_offset = max(0, min(max_off, self._chart_offset + delta))
         self._redraw()
 
+    def _pan_price(self, delta_frac):
+        """Pan the price (vertical) axis. delta_frac is fraction of visible range."""
+        self._price_pan = max(-3.0, min(3.0, getattr(self, "_price_pan", 0.0) + delta_frac))
+        self._redraw()
+
+    def _zoom_price(self, factor):
+        """Zoom the price (vertical) axis. factor>1 zooms out, <1 zooms in."""
+        self._price_scale = max(0.1, min(5.0, getattr(self, "_price_scale", 1.0) * factor))
+        self._redraw()
+
     def _reset_view(self):
         self._chart_offset = 0
         self._chart_zoom   = 60
+        self._price_pan    = 0.0
+        self._price_scale  = 1.0
         try: self._zoom_lbl.config(text="60 candles")
         except Exception: pass
         self._redraw()
@@ -1335,8 +1346,17 @@ class ChartPanel:
                        transform=self.ax_p.transAxes,
                        color=MUTED, fontsize=9, fontweight="bold", va="top", ha="right")
         if hi and lo:
-            pad = (max(hi) - min(lo)) * 0.08 or 1
-            self.ax_p.set_ylim(min(lo) - pad, max(hi) + pad)
+            base_pad = (max(hi) - min(lo)) * 0.08 or 1
+            lo_auto  = min(lo) - base_pad
+            hi_auto  = max(hi) + base_pad
+            mid      = (lo_auto + hi_auto) / 2
+            rng      = (hi_auto - lo_auto) / 2
+            scale    = getattr(self, "_price_scale", 1.0)
+            pan      = getattr(self, "_price_pan", 0.0)
+            # scale<1 zooms in (smaller range), pan shifts the centre by fraction of range
+            half     = rng * scale
+            centre   = mid + pan * rng
+            self.ax_p.set_ylim(centre - half, centre + half)
         self.ax_p.yaxis.tick_right(); self.ax_p.yaxis.set_label_position("right")
         self.ax_p.legend(loc="upper left", fontsize=7.5, facecolor=BG2,
                          edgecolor=SEP, labelcolor=C_AX, framealpha=0.92,
