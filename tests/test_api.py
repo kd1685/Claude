@@ -223,6 +223,8 @@ def _advanced(client):
     # Cancel endpoints: missing command -> 404; cancel-pending returns a count.
     assert client.post("/api/control/commands/999999/cancel").status_code == 404
     assert "cancelled" in client.post("/api/control/commands/cancel-pending").json()
+    # Stop-current returns how many running scans were signalled.
+    assert "stopping" in client.post("/api/control/stop-current").json()
 
 
 def test_remote_agent():

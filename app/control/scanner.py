@@ -14,6 +14,14 @@ from .adapter import ActionResult
 KIND_FIELD = {"power": "power", "killpoints": "kill_points", "dead": "deads"}
 
 
+def _stop(adapter) -> bool:
+    cb = getattr(adapter, "should_stop", None)
+    try:
+        return bool(cb and cb())
+    except Exception:
+        return False
+
+
 def scan_rankings_via_adb(adapter, *, kind: str, pages: int) -> ActionResult:
     if not ocr.available():
         return ActionResult(
@@ -41,6 +49,8 @@ def scan_rankings_via_adb(adapter, *, kind: str, pages: int) -> ActionResult:
     import time
 
     for _ in range(pages):
+        if _stop(adapter):
+            break
         png = driver.screencap()
         for row in rank_cfg["rows"]:
             name = ocr.ocr_region(png, row["name"]).strip().splitlines()
@@ -81,6 +91,8 @@ def scan_rallies_via_adb(adapter, *, pages: int) -> ActionResult:
     seen: dict[str, dict] = {}
     scroll = cfg.get("scroll")
     for _ in range(pages):
+        if _stop(adapter):
+            break
         png = driver.screencap()
         for row in cfg["rows"]:
             leader = ocr.ocr_region(png, row["leader"]).strip().splitlines()
@@ -135,8 +147,12 @@ def scan_profiles_via_adb(adapter, *, pages: int) -> ActionResult:
     back_n = int(cfg.get("back_to_list", 2))
     seen: dict[str, dict] = {}
 
+    stopped = False
     for _ in range(pages):
         for tap in cfg["row_taps"]:
+            if _stop(adapter):
+                stopped = True
+                break
             driver.tap(int(tap[0]), int(tap[1]))
             time.sleep(1.4)                       # governor profile opens
             try:
@@ -160,6 +176,8 @@ def scan_profiles_via_adb(adapter, *, pages: int) -> ActionResult:
             time.sleep(0.8)
             driver.tap(int(prof_close[0]), int(prof_close[1]))
             time.sleep(0.8)
+        if stopped:
+            break
         scroll = cfg.get("scroll")
         if scroll:
             driver.swipe(*[int(v) for v in scroll[:4]],
@@ -171,7 +189,8 @@ def scan_profiles_via_adb(adapter, *, pages: int) -> ActionResult:
     except Exception:
         driver.keyevent(4)
     rows = list(seen.values())
-    return ActionResult(True, f"deep-scanned {len(rows)} profiles", {"rows": rows})
+    note = " (stopped early)" if stopped else ""
+    return ActionResult(True, f"deep-scanned {len(rows)} profiles{note}", {"rows": rows})
 
 
 def find_on_map_via_adb(adapter, *, name: str, passes: int | None = None) -> ActionResult:
@@ -198,6 +217,8 @@ def find_on_map_via_adb(adapter, *, name: str, passes: int | None = None) -> Act
             pass
 
     for _ in range(passes):
+        if _stop(adapter):
+            break
         png = driver.screencap()
         hit = ocr.find_text(png, name)
         if hit:

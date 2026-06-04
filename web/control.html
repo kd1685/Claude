@@ -139,6 +139,7 @@
   <div class="panel">
     <h2>Command queue / audit log <span class="muted" id="qstate" style="font-size:12px"></span>
       <button id="q_cancel_all" style="float:right;font-size:12px;padding:4px 10px;border-color:var(--red);color:var(--red)">Cancel all pending</button>
+      <button id="q_stop" style="float:right;font-size:12px;padding:4px 10px;margin-right:8px;border-color:var(--red);color:var(--red)">Stop running scan</button>
     </h2>
     <table>
       <thead><tr><th>#</th><th>Action</th><th>Target</th><th>By</th><th>Status</th><th>Result / error</th><th>When</th><th></th></tr></thead>
@@ -346,6 +347,11 @@ async function startApp(me) {
   document.getElementById("q_cancel_all").onclick = async () => {
     try { const r = await post("/api/control/commands/cancel-pending");
       toast(`Cancelled ${r.cancelled} pending`); loadQueue(); }
+    catch (e) { toast("Error: " + e.message); }
+  };
+  document.getElementById("q_stop").onclick = async () => {
+    try { const r = await post("/api/control/stop-current");
+      toast(r.stopping ? "Stopping the running scan…" : "Nothing is running"); loadQueue(); }
     catch (e) { toast("Error: " + e.message); }
   };
   document.getElementById("s_deep").onclick = () => queued(post("/api/control/scan-profiles",

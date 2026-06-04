@@ -141,6 +141,16 @@ def _audit_query(kind, officer, frm, to, limit):
     return sql, (*args, limit)
 
 
+@router.post("/stop-current")
+def stop_current(user=Depends(require_ready)):
+    """Ask the currently-running scan to stop (it returns what it scanned so far)."""
+    conn = get_conn()
+    cur = conn.execute(
+        "UPDATE device_tasks SET cancel_requested=1 WHERE status='running'")
+    conn.commit()
+    return {"stopping": cur.rowcount}
+
+
 @router.post("/commands/cancel-pending")
 def cancel_pending(user=Depends(require_ready)):
     """Cancel every queued (not-yet-started) command."""

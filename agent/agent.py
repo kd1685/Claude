@@ -49,6 +49,28 @@ from app.control.adb_adapter import AdbAdapter  # noqa: E402
 adapter = AdbAdapter()
 
 
+def _make_stop_checker(task_id, headers):
+    """Returns a throttled callable the scanner uses to ask the server whether
+    this scan has been told to stop (checks at most every ~2s)."""
+    state = {"t": 0.0, "v": False}
+
+    def check() -> bool:
+        now = time.time()
+        if state["v"] or now - state["t"] < 2.0:
+            return state["v"]
+        state["t"] = now
+        try:
+            r = requests.get(f"{SERVER_URL}/api/agent/task/{task_id}",
+                             headers=headers, timeout=10)
+            if r.ok:
+                state["v"] = bool(r.json().get("cancel_requested"))
+        except requests.RequestException:
+            pass
+        return state["v"]
+
+    return check
+
+
 def dispatch(kind: str, p: dict) -> ActionResult:
     if kind == "give_title":
         return adapter.give_title(name=p["name"], governor_id=p.get("governor_id"),
@@ -96,7 +118,11 @@ def main() -> int:
                 time.sleep(POLL_INTERVAL); continue
 
             print(f"▶ task #{task['id']} {task['kind']} {task['params']}")
-            res = dispatch(task["kind"], task["params"])
+            adapter.should_stop = _make_stop_checker(task["id"], headers)
+            try:
+                res = dispatch(task["kind"], task["params"])
+            finally:
+                adapter.should_stop = None
             requests.post(f"{SERVER_URL}/api/agent/complete", headers=headers, json={
                 "task_id": task["id"], "ok": res.ok, "detail": res.detail,
                 "data": res.data, "error": None if res.ok else res.detail,

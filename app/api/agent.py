@@ -84,3 +84,15 @@ def health(x_agent_token: str | None = Header(default=None)):
     _auth(x_agent_token)
     _beat()
     return {"ok": True}
+
+
+@router.get("/task/{task_id}")
+def task_status(task_id: int, x_agent_token: str | None = Header(default=None)):
+    """The agent polls this during a long scan to see if it was asked to stop."""
+    _auth(x_agent_token)
+    row = get_conn().execute(
+        "SELECT status, cancel_requested FROM device_tasks WHERE id=?", (task_id,)
+    ).fetchone()
+    if not row:
+        return {"status": "missing", "cancel_requested": True}
+    return {"status": row["status"], "cancel_requested": bool(row["cancel_requested"])}

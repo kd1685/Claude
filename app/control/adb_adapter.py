@@ -84,6 +84,9 @@ class AdbAdapter(AccountAdapter):
         self.driver = AdbDriver(config.ADB_PATH, config.ADB_SERIAL)
         self.profile = UIProfile.load(config.UI_PROFILE)
         self._connected = False
+        # The agent sets this to a callable returning True when the server has
+        # asked the running scan to stop. Scanner loops check it between items.
+        self.should_stop = None
 
     # ---- lifecycle -----------------------------------------------------
     def connect(self) -> ActionResult:

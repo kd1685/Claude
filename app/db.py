@@ -163,6 +163,7 @@ CREATE TABLE IF NOT EXISTS device_tasks (
     ok           INTEGER,
     result       TEXT,                          -- json (detail + data)
     error        TEXT,
+    cancel_requested INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT DEFAULT (datetime('now')),
     claimed_at   TEXT,
     finished_at  TEXT
@@ -231,6 +232,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if ucols and "must_change_password" not in ucols:
         conn.execute(
             "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
+    dcols = {r["name"] for r in conn.execute("PRAGMA table_info(device_tasks)")}
+    if dcols and "cancel_requested" not in dcols:
+        conn.execute(
+            "ALTER TABLE device_tasks ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0")
 
 
 def upsert_player(name: str, governor_id: str | None = None,
