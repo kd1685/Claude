@@ -256,6 +256,39 @@ class BotState:
     trades:       list  = field(default_factory=list)
     positions:    dict  = field(default_factory=dict)   # id -> Position
 
+
+class AdaptiveTriggerEngine:
+    """ATR volatility + recent win-rate based dynamic signal threshold."""
+    def __init__(self, base_threshold=6.0, window=20):
+        self.base_threshold = base_threshold
+        self.window = window
+        self.recent_trades = []   # 1=win, 0=loss
+        self._atr_history = {}    # pair -> list of atr_pct values
+
+    def update_atr(self, pair, atr_pct):
+        h = self._atr_history.setdefault(pair, [])
+        h.append(atr_pct)
+        if len(h) > 50: h.pop(0)
+
+    def log_trade(self, is_win):
+        self.recent_trades.append(1 if is_win else 0)
+        if len(self.recent_trades) > 50: self.recent_trades.pop(0)
+
+    def get_threshold(self, pair, current_atr_pct):
+        thr = self.base_threshold
+        h = self._atr_history.get(pair, [])
+        if len(h) >= self.window:
+            mean_atr = sum(h[-self.window:]) / self.window
+            if current_atr_pct < mean_atr * 0.75:
+                thr += 1.0   # dead market — raise bar
+            elif current_atr_pct > mean_atr * 1.5:
+                thr -= 0.5   # strong breakout — ease slightly
+        if len(self.recent_trades) >= 10:
+            wr = sum(self.recent_trades[-10:]) / 10
+            if wr < 0.40:
+                thr = max(thr, 7.0)  # losing streak — only high-conviction
+        return max(5.0, min(8.0, round(thr, 1)))
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  MEXC API
 # ══════════════════════════════════════════════════════════════════════════════
@@ -338,6 +371,30 @@ def get_live_account(key, secret):
             errors.append(f"{path}: {str(e)[:40]}")
 
     raise RuntimeError(f"All endpoints failed: {'; '.join(errors[:2])}")
+
+def fetch_fee_rate(key, secret):
+    """Fetch actual maker/taker fee rates from MEXC. Returns (maker, taker) as decimals."""
+    try:
+        r = mexc_private("GET", "/api/v1/private/account/tiered_fee_rate", {}, key, secret, False)
+        if r.get("success") and r.get("data"):
+            d = r["data"]
+            maker = float(d.get("makerFeeRate", d.get("maker", 0.0002)))
+            taker = float(d.get("takerFeeRate", d.get("taker", 0.0006)))
+            return maker, taker
+    except Exception:
+        pass
+    # Fallback: try the user info endpoint
+    try:
+        r = mexc_private("GET", "/api/v1/private/account/info", {}, key, secret, False)
+        if r.get("success") and r.get("data"):
+            d = r["data"]
+            maker = float(d.get("makerFeeRate", 0.0002))
+            taker = float(d.get("takerFeeRate", 0.0006))
+            return maker, taker
+    except Exception:
+        pass
+    return 0.0002, 0.0006   # MEXC defaults: 0.02% maker, 0.06% taker
+
 
 def get_ticker(sym):
     r = mexc_public("/api/v1/contract/ticker", {"symbol": sym})
@@ -1001,7 +1058,8 @@ class ChartPanel:
         self._last_candles   = []
         self._last_signals   = None
         self._last_positions = []
-        self._on_tf_change   = None  # callback set by app on first update()
+        self._on_tf_change   = None  # kept for compat but no longer used
+        self._tf_candles     = {}    # per-TF candle cache
 
         tf_opts = [("1m","Min1"),("5m","Min5"),("15m","Min15"),("1h","Hour1"),("1d","Day1")]
         for label, tf_val in tf_opts:
@@ -1065,9 +1123,33 @@ class ChartPanel:
             if btn:
                 btn.config(bg=BLUE if t == tf else BG3,
                            fg=BG if t == tf else MUTED)
-        # Trigger a refresh of this chart via the app's fetch pipeline
-        if hasattr(self, "_on_tf_change") and self._on_tf_change:
-            self._on_tf_change(self.symbol, tf)
+        # Use cached data immediately if available
+        if tf in self._tf_candles:
+            cached = self._tf_candles[tf]
+            self._last_candles = cached.get("candles", self._last_candles)
+            self._last_signals = cached.get("signals", self._last_signals)
+            self._redraw()
+        # Always background-refresh independently of bot loop
+        def _bg_fetch():
+            try:
+                can2 = get_klines(self.symbol, tf, 200)
+                tkr2 = get_ticker(self.symbol)
+                from dataclasses import asdict
+                # compute_signals needs thresh — use 6.0 as reasonable default
+                sig2 = compute_signals(can2, tkr2, 6.0)
+                self._tf_candles[tf] = {"candles": can2, "signals": sig2}
+                # Only update display if this TF is still the active one
+                if self._chart_tf == tf:
+                    import tkinter as _tk
+                    self._last_candles = can2
+                    self._last_signals = sig2
+                    try:
+                        self._redraw()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        threading.Thread(target=_bg_fetch, daemon=True).start()
 
     def _zoom(self, delta):
         self._chart_zoom = max(15, min(200, self._chart_zoom + delta))
@@ -1170,34 +1252,41 @@ class ChartPanel:
 
             # Entry line — blue dashed, distinct from TP/SL
             ENTRY_COL = "#4da6ff"  # bright blue, clearly different from green/red
+            entry_label_str = f"▶ ENTRY ({'L' if is_long else 'S'}){h_tag}"
             self.ax_p.axhline(pos.entry_price, color=ENTRY_COL, lw=1.5, ls="--", alpha=0.95,
-                               label=f"Entry ({tag}){h_tag}")
+                               label=entry_label_str)
             self.ax_p.annotate(
-                f" Entry {_fp(pos.entry_price)}",
+                f" {entry_label_str} {_fp(pos.entry_price)}",
                 xy=(n * 0.01, pos.entry_price),
-                color=ENTRY_COL, fontsize=7.5, fontweight="bold",
+                color=ENTRY_COL, fontsize=8.5, fontweight="bold",
                 va="bottom", ha="left",
                 bbox=dict(boxstyle="round,pad=0.15", fc=BG4, ec=ENTRY_COL, alpha=0.85))
 
-            # Take profit — green dashed
-            self.ax_p.axhline(pos.take_profit, color="#00e676", lw=1.2, ls="--", alpha=0.9,
-                               label=f"TP {_fp(pos.take_profit)}")
+            # Take profit — green dashed with filled band between entry and TP
+            tp_col = "#00e676"
+            self.ax_p.axhline(pos.take_profit, color=tp_col, lw=1.2, ls="--", alpha=0.9,
+                               label=f"✓ TP {_fp(pos.take_profit)}")
             self.ax_p.annotate(
-                f" TP  {_fp(pos.take_profit)}",
+                f" ✓ TP  {_fp(pos.take_profit)}",
                 xy=(n * 0.01, pos.take_profit),
-                color="#00e676", fontsize=7.5, fontweight="bold",
+                color=tp_col, fontsize=8.5, fontweight="bold",
                 va="bottom", ha="left",
-                bbox=dict(boxstyle="round,pad=0.15", fc=BG4, ec="#00e676", alpha=0.85))
+                bbox=dict(boxstyle="round,pad=0.15", fc=BG4, ec=tp_col, alpha=0.85))
+            # Green filled band between entry and TP
+            self.ax_p.axhspan(pos.entry_price, pos.take_profit, alpha=0.05, color=tp_col)
 
-            # Stop loss — red dashed
-            self.ax_p.axhline(pos.stop_loss, color="#ff3d57", lw=1.2, ls="--", alpha=0.9,
-                               label=f"SL  {_fp(pos.stop_loss)}")
+            # Stop loss — red dashed with filled band between entry and SL
+            sl_col = "#ff3d57"
+            self.ax_p.axhline(pos.stop_loss, color=sl_col, lw=1.2, ls="--", alpha=0.9,
+                               label=f"✕ SL  {_fp(pos.stop_loss)}")
             self.ax_p.annotate(
-                f" SL  {_fp(pos.stop_loss)}",
+                f" ✕ SL  {_fp(pos.stop_loss)}",
                 xy=(n * 0.01, pos.stop_loss),
-                color="#ff3d57", fontsize=7.5, fontweight="bold",
+                color=sl_col, fontsize=8.5, fontweight="bold",
                 va="top", ha="left",
-                bbox=dict(boxstyle="round,pad=0.15", fc=BG4, ec="#ff3d57", alpha=0.85))
+                bbox=dict(boxstyle="round,pad=0.15", fc=BG4, ec=sl_col, alpha=0.85))
+            # Red filled band between entry and SL
+            self.ax_p.axhspan(pos.stop_loss, pos.entry_price, alpha=0.05, color=sl_col)
 
             # Liquidation — pink dotted, thinner
             self.ax_p.axhline(pos.liq_price, color="#f783ac", lw=0.9, ls="-.", alpha=0.75,
@@ -1205,7 +1294,7 @@ class ChartPanel:
             self.ax_p.annotate(
                 f" LIQ {_fp(pos.liq_price)}",
                 xy=(n * 0.01, pos.liq_price),
-                color="#f783ac", fontsize=7, fontweight="bold",
+                color="#f783ac", fontsize=8.5, fontweight="bold",
                 va="top", ha="left",
                 bbox=dict(boxstyle="round,pad=0.15", fc=BG4, ec="#f783ac", alpha=0.75))
 
@@ -1219,6 +1308,11 @@ class ChartPanel:
         self.ax_p.text(0.01, 0.97, pair_label(self.symbol),
                        transform=self.ax_p.transAxes,
                        color=self.colour, fontsize=10, fontweight="bold", va="top")
+        # TF label top-right
+        tf_display = getattr(self, "_chart_tf", "Min5").replace("Min","").replace("Hour","h").replace("Day","d")
+        self.ax_p.text(0.99, 0.97, tf_display,
+                       transform=self.ax_p.transAxes,
+                       color=MUTED, fontsize=9, fontweight="bold", va="top", ha="right")
         if hi and lo:
             pad = (max(hi) - min(lo)) * 0.08 or 1
             self.ax_p.set_ylim(min(lo) - pad, max(hi) + pad)
