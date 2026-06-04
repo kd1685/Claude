@@ -2034,10 +2034,10 @@ class HermesBotApp:
             justify="left", wraplength=250).pack(fill="x", pady=(0, 3))
 
         self._overnight_detail = tk.Label(ni2,
-            text="  • Min signal  6/9 → 5/9\n"
-                 "  • Adaptive kicks in at 10cy\n"
-                 "  • Dual TF RSI filter +10 pts\n"
-                 "  • Adaptive floor 4.0 → 3.5",
+            text="  • Adaptive base −0.5 (6→5.5)\n"
+                 "  • Hard floor stays at 5/9\n"
+                 "  • Dual-TF RSI gate 65 → 75\n"
+                 "  • Auto on/off by UTC time",
             font=("Consolas", 8), fg=MUTED, bg=BG2, justify="left")
         self._overnight_detail.pack(fill="x")
 
@@ -3224,14 +3224,6 @@ class HermesBotApp:
             else:
                 self._log("☀ Overnight mode auto-deactivated (UTC hour: {})".format(hour), CYAN)
 
-    def _adaptive_trigger_cycle(self):
-        """How many HOLD cycles before adaptive threshold kicks in."""
-        return 10 if (hasattr(self, "overnight_var") and self.overnight_var.get()) else 20
-
-    def _adaptive_floor(self):
-        """Minimum threshold adaptive can relax to."""
-        return 3.5 if (hasattr(self, "overnight_var") and self.overnight_var.get()) else 4.0
-
     def _claude_position_monitor(self, pid):
         """
         Background thread: monitors an open position every 30s.
@@ -3707,8 +3699,10 @@ class HermesBotApp:
                         else:
                             scan_errors.append(f"{pair_label(p)}: {err_str[:60]}")
 
-                # Update adaptive engine base threshold and compute effective threshold
-                self._adaptive_engine.base_threshold = thr
+                # Update adaptive engine base threshold and compute effective threshold.
+                # Overnight (low-volume) sessions lower the base by 0.5; the engine's
+                # hard 5.0 floor still applies, so we never drop below 5/9.
+                self._adaptive_engine.base_threshold = (thr - 0.5) if overnight else thr
                 _thr_eff = thr  # default; adaptive engine used per-pair below
                 # Stagger launches to avoid MEXC rate limit
                 threads = []
