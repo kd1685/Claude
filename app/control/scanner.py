@@ -116,21 +116,22 @@ _PROFILE_FIELDS = ("power", "kill_points", "t1_kills", "t2_kills", "t3_kills",
 
 
 def scan_profiles_via_adb(adapter, *, pages: int) -> ActionResult:
-    """Deep scan (Statsmaster-style): open each governor's profile + More Info and
-    OCR the full stat block, including DEAD troops which the list view lacks."""
+    """Deep scan (Statsmaster-style): tap each governor in the rankings, open
+    More Info, and read the full stat block by LABEL (Dead, Resource Assistance,
+    …) so it works regardless of exact pixel positions. This is how dead troops
+    are captured."""
     if not ocr.available():
         return ActionResult(False, "OCR not available (install requirements-adb.txt + tesseract)")
     cfg = adapter.profile.data.get("profiles")
     if not cfg or "row_taps" not in cfg:
         return ActionResult(False, "profile has no 'profiles' deep-scan calibration block")
 
-    driver = adapter.driver
     import time
-    # Open the Power ranking (same entry point as the list scan).
+    driver = adapter.driver
     adapter.run_macro("open_rankings", {"tab_point": adapter.profile.anchors["tab_power"]})
 
-    pfields = cfg.get("profile_fields", {})
-    mfields = cfg.get("more_fields", {})
+    labels = cfg.get("labels", {})
+    name_region = cfg.get("name_region")
     back_n = int(cfg.get("back_to_list", 2))
     seen: dict[str, dict] = {}
 
@@ -138,25 +139,17 @@ def scan_profiles_via_adb(adapter, *, pages: int) -> ActionResult:
         for tap in cfg["row_taps"]:
             driver.tap(int(tap[0]), int(tap[1]))
             time.sleep(1.4)                       # governor profile opens
-            png = driver.screencap()
-            row = {}
-            if pfields.get("name"):
-                nm = ocr.ocr_region(png, pfields["name"]).strip().splitlines()
-                row["name"] = nm[0].strip() if nm else ""
-            for f in ("power", "kill_points"):
-                if pfields.get(f):
-                    row[f] = ocr.parse_int(ocr.ocr_region(png, pfields[f], digits=True))
-            # Open "More Info" for the detailed stats (incl. deads).
             try:
                 adapter.run_macro("open_more_info", {})
                 time.sleep(1.0)
-                png2 = driver.screencap()
-                for f in _PROFILE_FIELDS:
-                    if mfields.get(f):
-                        row[f] = ocr.parse_int(ocr.ocr_region(png2, mfields[f], digits=True))
             except Exception:
                 pass
-            if row.get("name"):
+            png = driver.screencap()
+            row = dict(ocr.read_labeled_values(png, labels))   # power, kp, deads, rss…
+            if name_region:
+                nm = ocr.ocr_region(png, name_region).strip().splitlines()
+                row["name"] = nm[0].strip() if nm else ""
+            if row.get("name") and len(row) > 1:
                 seen[row["name"]] = row
             for _ in range(back_n):
                 driver.keyevent(4)

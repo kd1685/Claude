@@ -101,27 +101,23 @@
 
   "profiles": {
     "_comment": [
-      "Deep scan (Statsmaster-style): tap each rankings row -> Governor Profile",
-      "-> More Info, OCR the full stat block incl. DEAD troops. profile_fields",
-      "are read from the Governor Profile screen (calibrated). more_fields are",
-      "from the More Info screen and are PLACEHOLDERS — calibrate with a More",
-      "Info screenshot. row_taps are the rankings list rows (tap to open profile)."
+      "Deep scan (Statsmaster-style): tap each rankings row -> profile -> More",
+      "Info, then read the stat block by LABEL (resolution/layout independent).",
+      "Calibrated from a 720p More Info screen. row_taps = the rankings rows."
     ],
     "row_taps": [
       [400, 228], [400, 309], [400, 390], [400, 470], [400, 551], [400, 631]
     ],
     "scroll": [640, 600, 640, 280, 600],
     "back_to_list": 2,
-    "profile_fields": {
-      "name":        [470, 196, 340, 34],
-      "kill_points": [700, 244, 180, 32],
-      "power":       [930, 244, 165, 32]
-    },
-    "more_fields": {
-      "deads":        [430, 300, 220, 34],
-      "t4_kills":     [430, 360, 220, 34],
-      "t5_kills":     [430, 420, 220, 34],
-      "rss_assist":   [430, 480, 220, 34]
+    "name_region": [285, 105, 300, 40],
+    "labels": {
+      "power":        "Power",
+      "kill_points":  "Kill Points",
+      "deads":        "Dead",
+      "rss_gathered": "Resources Gathered",
+      "rss_assist":   "Resource Assistance",
+      "helps":        "Alliance Help"
     }
   },
 

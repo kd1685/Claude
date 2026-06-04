@@ -92,3 +92,50 @@ def find_text(png_bytes: bytes, target: str, min_ratio: float = 0.72):
             cy = (data["top"][i] + data["height"][i] / 2) / 2
             best = (int(cx), int(cy))
     return best if best and best_r >= min_ratio else None
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def read_labeled_values(png_bytes: bytes, labels: dict[str, str]) -> dict[str, int]:
+    """Statsmaster-style label-based reading: for each {field: 'Label Text'}, find
+    the on-screen row containing that label and return the number to its right.
+    Resolution/layout independent — no fixed pixel regions."""
+    if not available() or not labels:
+        return {}
+    import pytesseract
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+    d = pytesseract.image_to_data(_preprocess(img), output_type=pytesseract.Output.DICT)
+
+    # Group recognised words into screen lines, sorted left-to-right.
+    from collections import defaultdict
+    lines: dict = defaultdict(list)
+    for i, raw in enumerate(d["text"]):
+        if raw.strip():
+            key = (d["block_num"][i], d["par_num"][i], d["line_num"][i])
+            lines[key].append((d["left"][i], raw))
+
+    out: dict[str, int] = {}
+    for field, label in labels.items():
+        ltoks = [_norm(t) for t in label.split() if _norm(t)]
+        if not ltoks:
+            continue
+        for words in lines.values():
+            toks = [(lx, _norm(t), t) for lx, t in sorted(words)]
+            for i in range(len(toks) - len(ltoks) + 1):
+                if all(ltoks[j] in toks[i + j][1] for j in range(len(ltoks))):
+                    digits = ""
+                    for _lx, ntok, raw in toks[i + len(ltoks):]:
+                        if re.search(r"\d", raw):
+                            digits += re.sub(r"[^0-9]", "", raw)
+                        elif digits:                 # number ended
+                            break
+                    if digits:
+                        out[field] = int(digits)
+                    break
+            if field in out:
+                break
+    return out
