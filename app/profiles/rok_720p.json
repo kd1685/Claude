@@ -17,6 +17,8 @@
     "close_x":         [1115, 43],
     "profile_close":   [1163, 71],
     "more_info_button":[192, 600],
+    "more_info_close": [1115, 43],
+    "profile_view_close": [1163, 71],
     "alliance_war":    [1180, 430],
 
     "search_button":   [48, 470],

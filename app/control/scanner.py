@@ -151,9 +151,15 @@ def scan_profiles_via_adb(adapter, *, pages: int) -> ActionResult:
                 row["name"] = nm[0].strip() if nm else ""
             if row.get("name") and len(row) > 1:
                 seen[row["name"]] = row
-            for _ in range(back_n):
-                driver.keyevent(4)
-                time.sleep(0.6)
+            # Close back to the rankings list by tapping the X buttons (back-key
+            # is unreliable on these panels): More Info -> profile -> list.
+            a = adapter.profile.anchors
+            mi_close = a.get("more_info_close", a.get("close_x", [1115, 43]))
+            prof_close = a.get("profile_view_close", a.get("profile_close", mi_close))
+            driver.tap(int(mi_close[0]), int(mi_close[1]))
+            time.sleep(0.8)
+            driver.tap(int(prof_close[0]), int(prof_close[1]))
+            time.sleep(0.8)
         scroll = cfg.get("scroll")
         if scroll:
             driver.swipe(*[int(v) for v in scroll[:4]],
