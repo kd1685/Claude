@@ -116,7 +116,7 @@ class RemoteAdapter(AccountAdapter):
     def scan_rallies(self, *, pages) -> ActionResult:
         return self._run("scan_rallies", {"pages": pages}, config.AGENT_SCAN_TIMEOUT)
 
-    def scan_profiles(self, *, pages) -> ActionResult:
-        # Deep scans take much longer (a few seconds per governor).
-        return self._run("scan_profiles", {"pages": pages},
-                         max(config.AGENT_SCAN_TIMEOUT, pages * 90))
+    def scan_profiles(self, *, count) -> ActionResult:
+        # Deep scans take ~5s per governor, so scale the timeout with the count.
+        return self._run("scan_profiles", {"count": count},
+                         max(config.AGENT_SCAN_TIMEOUT, count * 12))

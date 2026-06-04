@@ -204,7 +204,7 @@ def _advanced(client):
     assert any(e["id"] == eid for e in client.get("/api/events").json())
 
     # Deep scan (incl. deads) + rally scan run via the mock backend.
-    cid = client.post("/api/control/scan-profiles", json={"pages": 1}).json()["command_id"]
+    cid = client.post("/api/control/scan-profiles", json={"count": 5}).json()["command_id"]
     assert _wait_command(client, cid)["status"] == "done"
     cid = client.post("/api/control/scan-rallies", json={"pages": 1}).json()["command_id"]
     assert _wait_command(client, cid)["status"] == "done"
@@ -225,6 +225,11 @@ def _advanced(client):
     assert "cancelled" in client.post("/api/control/commands/cancel-pending").json()
     # Stop-current returns how many running scans were signalled.
     assert "stopping" in client.post("/api/control/stop-current").json()
+
+    # Roster cleanup: preview + delete a governor (admin only).
+    assert "count" in client.get("/api/players/prune-preview?days=7").json()
+    assert client.delete(f"/api/players/{ids[0]}").status_code == 200
+    assert client.get(f"/api/players/{ids[0]}").status_code == 404
 
 
 def test_remote_agent():

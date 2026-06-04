@@ -57,6 +57,8 @@ class LocateIn(BaseModel):
 class ScanJobIn(BaseModel):
     kind: str = Field(default="power", description="power | killpoints | dead")
     pages: int = Field(default=4, ge=1, le=50, description="rankings pages to scroll")
+    count: int = Field(default=100, ge=1, le=1000,
+                       description="deep scan: number of top governors to scan")
 
 
 class RotationIn(BaseModel):

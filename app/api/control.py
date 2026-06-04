@@ -77,8 +77,8 @@ def scan(body: ScanJobIn, user=Depends(require_action("scan"))):
 
 @router.post("/scan-profiles")
 def scan_profiles(body: ScanJobIn, user=Depends(require_action("scan"))):
-    """Deep scan (opens each governor's profile) to capture dead troops."""
-    return _enqueue("scan_profiles", user, params={"pages": body.pages})
+    """Deep scan the top N governors (opens each profile) to capture dead troops."""
+    return _enqueue("scan_profiles", user, params={"count": body.count})
 
 
 @router.post("/scan-rallies")

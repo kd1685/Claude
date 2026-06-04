@@ -36,7 +36,7 @@ _load_env(ROOT / "agent" / "agent.env")
 SERVER_URL = os.environ.get("SERVER_URL", "http://localhost:8000").rstrip("/")
 AGENT_TOKEN = os.environ.get("AGENT_TOKEN", "")
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "2"))
-AGENT_VERSION = "2026.06.04-verify-close"   # bump on each code change
+AGENT_VERSION = "2026.06.04b-count-rank"   # bump on each code change
 
 # Configure the local ADB adapter (via env) before importing the app config.
 os.environ.setdefault("CONTROL_BACKEND", "adb")
@@ -85,7 +85,7 @@ def dispatch(kind: str, p: dict) -> ActionResult:
         return adapter.scan_rankings(kind=p.get("kind", "power"),
                                      pages=int(p.get("pages", 4)))
     if kind == "scan_profiles":
-        return adapter.scan_profiles(pages=int(p.get("pages", 10)))
+        return adapter.scan_profiles(count=int(p.get("count", p.get("pages", 100))))
     if kind == "scan_rallies":
         return adapter.scan_rallies(pages=int(p.get("pages", 5)))
     return ActionResult(False, f"unknown task kind: {kind}")

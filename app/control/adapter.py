@@ -61,7 +61,7 @@ class AccountAdapter(abc.ABC):
         target_label, status, ...} ]}."""
 
     @abc.abstractmethod
-    def scan_profiles(self, *, pages: int) -> ActionResult:
-        """Deep scan: open each governor's profile + More Info to read the full
-        stat block including DEAD troops. data -> {'rows': [ {name, governor_id,
-        power, kill_points, t1..t5_kills, deads, rss_assist, rss_gathered} ]}."""
+    def scan_profiles(self, *, count: int) -> ActionResult:
+        """Deep scan the top `count` governors: open each one's profile + More
+        Info to read the full stat block including DEAD troops. data ->
+        {'rows': [ {name, power, kill_points, deads, rss_assist, ...} ]}."""

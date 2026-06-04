@@ -77,10 +77,10 @@ def scan(kind: str, pages: int) -> ActionResult:
     return res
 
 
-def scan_profiles(pages: int) -> ActionResult:
-    """Deep scan including dead troops (opens each governor's profile)."""
+def scan_profiles(count: int) -> ActionResult:
+    """Deep scan the top `count` governors incl. dead troops (opens each profile)."""
     adapter = get_adapter()
-    res = adapter.scan_profiles(pages=pages)
+    res = adapter.scan_profiles(count=count)
     if res.ok:
         summary = ingest_scan("profile", res.data.get("rows", []), source=adapter.name)
         res.data["summary"] = summary

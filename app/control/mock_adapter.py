@@ -85,9 +85,9 @@ class MockAdapter(AccountAdapter):
             })
         return ActionResult(True, f"[mock] read {len(rows)} rallies", {"rows": rows})
 
-    def scan_profiles(self, *, pages) -> ActionResult:
+    def scan_profiles(self, *, count) -> ActionResult:
         rows = []
-        for i, name in enumerate(_NAMES[: min(len(_NAMES), pages * 5)]):
+        for i, name in enumerate(_NAMES[: min(len(_NAMES), count)]):
             r = _rng(name + "profile")
             kp = r.randint(5_000_000, 900_000_000)
             rows.append({

@@ -210,8 +210,8 @@ class AdbAdapter(AccountAdapter):
         from .scanner import scan_rallies_via_adb
         return scan_rallies_via_adb(self, pages=pages)
 
-    def scan_profiles(self, *, pages) -> ActionResult:
+    def scan_profiles(self, *, count) -> ActionResult:
         if not self._connected:
             self.connect()
         from .scanner import scan_profiles_via_adb
-        return scan_profiles_via_adb(self, pages=pages)
+        return scan_profiles_via_adb(self, count=count)

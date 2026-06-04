@@ -127,81 +127,120 @@ _PROFILE_FIELDS = ("power", "kill_points", "t1_kills", "t2_kills", "t3_kills",
                    "t4_kills", "t5_kills", "deads", "rss_assist", "rss_gathered")
 
 
-def scan_profiles_via_adb(adapter, *, pages: int) -> ActionResult:
-    """Deep scan (Statsmaster-style): tap each governor in the rankings, open
-    More Info, and read the full stat block by LABEL (Dead, Resource Assistance,
-    …) so it works regardless of exact pixel positions. This is how dead troops
-    are captured."""
+def _close_profile_to_list(adapter, driver, title_region):
+    """More Info X -> profile X, verifying via the title (the profile re-appears
+    with an animation that can absorb an early tap). Returns when on the list."""
+    import time
+    a = adapter.profile.anchors
+    mi_close = a.get("more_info_close", a.get("close_x", [1113, 44]))
+    prof_close = a.get("profile_view_close", a.get("profile_close", mi_close))
+    driver.tap(int(mi_close[0]), int(mi_close[1]))
+    time.sleep(1.6)
+    driver.tap(int(prof_close[0]), int(prof_close[1]))
+    time.sleep(1.4)
+    for _ in range(3):
+        title = ocr.ocr_region(driver.screencap(), title_region).lower()
+        if "governor" in title or "more" in title:   # still on a profile
+            driver.tap(int(prof_close[0]), int(prof_close[1]))
+            time.sleep(1.2)
+        else:
+            break
+
+
+def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
+    """Deep scan the top `count` governors (Statsmaster-style). Reads each row's
+    RANK NUMBER + name so it never skips or double-scans, skips the controlling
+    account's own row, opens each profile -> More Info, and reads the stat block
+    (incl. DEAD troops) by LABEL."""
     if not ocr.available():
         return ActionResult(False, "OCR not available (install requirements-adb.txt + tesseract)")
     cfg = adapter.profile.data.get("profiles")
-    if not cfg or "row_taps" not in cfg:
-        return ActionResult(False, "profile has no 'profiles' deep-scan calibration block")
+    if not cfg or "rows" not in cfg:
+        return ActionResult(False, "profile has no 'profiles' deep-scan calibration block (rows)")
 
     import time
+    from ..config import config as _cfg
+    own = ocr._norm(_cfg.OWN_GOVERNOR) if _cfg.OWN_GOVERNOR else ""
+
     driver = adapter.driver
     adapter.run_macro("open_rankings", {"tab_point": adapter.profile.anchors["tab_power"]})
 
+    rows_cfg = cfg["rows"]
     labels = cfg.get("labels", {})
     name_region = cfg.get("name_region")
-    back_n = int(cfg.get("back_to_list", 2))
-    seen: dict[str, dict] = {}
+    title_region = cfg.get("title_region", [360, 40, 560, 55])
+    scroll = cfg.get("scroll", [640, 560, 640, 220, 1100])   # gentle/slow by default
 
-    stopped = False
-    for _ in range(pages):
-        for tap in cfg["row_taps"]:
-            if _stop(adapter):
-                stopped = True
-                break
-            driver.tap(int(tap[0]), int(tap[1]))
-            time.sleep(1.4)                       # governor profile opens
+    seen: dict[str, dict] = {}
+    done = set()              # ranks (or list-names) already handled
+    max_rank = 0
+    stalls = 0
+    guard = 0
+    while len(seen) < count and stalls < 3 and guard < count * 3 + 30:
+        guard += 1
+        if _stop(adapter):
+            break
+        png = driver.screencap()
+        screen = []
+        for r in rows_cfg:
+            rk = ocr.parse_int(ocr.ocr_region(png, r["rank"], digits=True)) if r.get("rank") else None
+            nm = ""
+            if r.get("name"):
+                nl = ocr.ocr_region(png, r["name"]).strip().splitlines()
+                nm = nl[0].strip() if nl else ""
+            screen.append((rk, nm, r))
+
+        progressed = False
+        for rk, listname, r in screen:
+            key = rk if rk is not None else ("n:" + ocr._norm(listname))
+            if not key or key in done:
+                continue
+            if rk is not None and rk > count:
+                continue
+            done.add(key)
+            if rk is not None:
+                max_rank = max(max_rank, rk)
+            if own and listname and own in ocr._norm(listname):
+                continue                              # skip our own account's row
+            driver.tap(int(r["tap"][0]), int(r["tap"][1]))
+            time.sleep(1.4)
             try:
                 adapter.run_macro("open_more_info", {})
                 time.sleep(1.0)
             except Exception:
                 pass
-            png = driver.screencap()
-            row = dict(ocr.read_labeled_values(png, labels))   # power, kp, deads, rss…
+            mpng = driver.screencap()
+            row = dict(ocr.read_labeled_values(mpng, labels))
             if name_region:
-                nm = ocr.ocr_region(png, name_region).strip().splitlines()
-                row["name"] = nm[0].strip() if nm else ""
+                nl = ocr.ocr_region(mpng, name_region).strip().splitlines()
+                row["name"] = nl[0].strip() if nl else ""
             if row.get("name") and len(row) > 1:
                 seen[row["name"]] = row
-            # Close back to the rankings list: More Info X -> profile X. The
-            # profile re-appears with an animation that can absorb a too-early
-            # tap, so verify via the title and retry until we're on the list.
-            a = adapter.profile.anchors
-            mi_close = a.get("more_info_close", a.get("close_x", [1113, 44]))
-            prof_close = a.get("profile_view_close", a.get("profile_close", mi_close))
-            title_region = cfg.get("title_region", [360, 40, 560, 55])
-            driver.tap(int(mi_close[0]), int(mi_close[1]))   # More Info -> profile
-            time.sleep(1.6)                                  # let it settle
-            driver.tap(int(prof_close[0]), int(prof_close[1]))  # profile -> list
-            time.sleep(1.4)
-            # Re-tap ONLY while a profile/More Info title is still visible (so we
-            # never over-tap onto the rankings list once it's actually closed).
-            for _ in range(3):
-                title = ocr.ocr_region(driver.screencap(), title_region).lower()
-                if "governor" in title or "more" in title:
-                    driver.tap(int(prof_close[0]), int(prof_close[1]))
-                    time.sleep(1.2)
-                else:
-                    break
-        if stopped:
+                progressed = True
+            _close_profile_to_list(adapter, driver, title_region)
+            if len(seen) >= count or _stop(adapter):
+                break
+        if len(seen) >= count or _stop(adapter):
             break
-        scroll = cfg.get("scroll")
-        if scroll:
-            driver.swipe(*[int(v) for v in scroll[:4]],
-                         ms=int(scroll[4]) if len(scroll) > 4 else 600)
-            time.sleep(0.8)
+
+        driver.swipe(*[int(v) for v in scroll[:4]],
+                     ms=int(scroll[4]) if len(scroll) > 4 else 1000)
+        time.sleep(1.0)
+        # Overshoot recovery: if the new top rank jumped past what we've done,
+        # the fling scrolled too far — nudge back up so we don't skip players.
+        if max_rank and rows_cfg[0].get("rank"):
+            toprk = ocr.parse_int(ocr.ocr_region(driver.screencap(), rows_cfg[0]["rank"], digits=True))
+            if toprk and toprk > max_rank + 1:
+                driver.swipe(int(scroll[0]), int(scroll[3]), int(scroll[2]), int(scroll[1]), ms=900)
+                time.sleep(1.0)
+        stalls = 0 if progressed else stalls + 1
 
     try:
         adapter.run_macro("close_rankings", {})
     except Exception:
         driver.keyevent(4)
     rows = list(seen.values())
-    note = " (stopped early)" if stopped else ""
-    return ActionResult(True, f"deep-scanned {len(rows)} profiles{note}", {"rows": rows})
+    return ActionResult(True, f"deep-scanned {len(rows)} governors", {"rows": rows})
 
 
 def find_on_map_via_adb(adapter, *, name: str, passes: int | None = None) -> ActionResult:

@@ -44,6 +44,9 @@ class Config:
     ADB_CONNECT: str = _get("ADB_CONNECT", "")
     UI_PROFILE: Path = (ROOT / _get("UI_PROFILE", "app/profiles/rok_720p.json")).resolve()
     TESSERACT_CMD: str = _get("TESSERACT_CMD", "tesseract")
+    # The controlling account's own in-game name — the deep scan skips this row
+    # in the rankings (its own profile has a different layout that breaks the loop).
+    OWN_GOVERNOR: str = _get("OWN_GOVERNOR", "")
 
     WORKER_INTERVAL: float = float(_get("WORKER_INTERVAL", "3"))
 

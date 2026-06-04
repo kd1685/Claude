@@ -42,7 +42,7 @@ def _dispatch(cmd) -> "actions.ActionResult":
     if kind == "scan":
         return actions.scan(params.get("kind", "power"), int(params.get("pages", 4)))
     if kind == "scan_profiles":
-        return actions.scan_profiles(int(params.get("pages", 10)))
+        return actions.scan_profiles(int(params.get("count", params.get("pages", 100))))
     if kind == "scan_rallies":
         return actions.scan_rallies(int(params.get("pages", 5)))
     raise ValueError(f"unknown command kind '{kind}'")

@@ -64,7 +64,8 @@
       <div class="label">Scan rankings</div>
       <label style="display:block;margin-top:8px"><input type="checkbox" id="s_power" checked> Power</label>
       <label style="display:block"><input type="checkbox" id="s_kp" checked> Kill Points</label>
-      <div class="field" style="margin-top:8px"><label>Pages</label><input id="s_pages" type="number" value="50" min="1" max="50" /></div>
+      <div class="field" style="margin-top:8px"><label>Pages (fast list)</label><input id="s_pages" type="number" value="50" min="1" max="50" /></div>
+      <div class="field" style="margin-top:8px"><label>Players (deep scan)</label><input id="s_count" type="number" value="100" min="1" max="1000" /></div>
       <button class="primary" style="margin-top:10px;width:100%" id="s_go">Scan selected (fast list)</button>
       <button style="margin-top:6px;width:100%" id="s_deep">Deep scan + deads (slow)</button>
       <button style="margin-top:6px;width:100%" id="s_rally">Scan alliance rallies</button>
@@ -108,6 +109,17 @@
       <thead><tr><th>Ranking</th><th>Time (UTC)</th><th>Pages</th><th>Status</th><th>Last run</th><th>Actions</th></tr></thead>
       <tbody id="schedules"></tbody>
     </table>
+  </div>
+
+  <div class="panel" id="cleanupPanel" style="display:none">
+    <h2>Roster cleanup <span class="muted" style="font-size:12px">· admin only</span></h2>
+    <p class="sub">Remove governors not seen in a recent scan — departed players and old OCR misreads. Run a full scan first, then prune (e.g. "not seen in 1 day" keeps only who was in today's scan).</p>
+    <div class="row" style="align-items:end">
+      <div class="field"><label>Not seen in (days)</label><input id="cl_days" type="number" value="3" min="0" max="90" style="width:130px" /></div>
+      <button id="cl_preview">Preview</button>
+      <button id="cl_remove" style="border-color:var(--red);color:var(--red)">Remove</button>
+    </div>
+    <p class="hint" id="cl_msg"></p>
   </div>
 
   <div class="panel" id="myAccount" style="max-width:520px">
@@ -303,6 +315,7 @@ async function startApp(me) {
   if (me.role === "admin") {
     document.getElementById("officersPanel").style.display = "";
     document.getElementById("schedPanel").style.display = "";
+    document.getElementById("cleanupPanel").style.display = "";
     tasks.push(loadOfficers(), loadSchedules());
   }
   await Promise.all(tasks);
@@ -355,7 +368,7 @@ async function startApp(me) {
     catch (e) { toast("Error: " + e.message); }
   };
   document.getElementById("s_deep").onclick = () => queued(post("/api/control/scan-profiles",
-    { pages: +s_pages.value }));
+    { count: +document.getElementById("s_count").value }));
   document.getElementById("s_rally").onclick = () => queued(post("/api/control/scan-rallies",
     { pages: +s_pages.value }));
   document.getElementById("o_add").onclick = async () => {
@@ -409,6 +422,24 @@ async function startApp(me) {
       });
       toast("Schedule added"); await loadSchedules();
     } catch (e) { toast("Error: " + e.message); }
+  };
+  document.getElementById("cl_preview").onclick = async () => {
+    try {
+      const r = await api(`/api/players/prune-preview?days=${+document.getElementById("cl_days").value}`);
+      const sample = r.names.slice(0, 25).join(", ");
+      document.getElementById("cl_msg").textContent =
+        `${r.count} governor(s) would be removed (not seen since ${r.cutoff})` + (sample ? ` — e.g. ${sample}` : "");
+    } catch (e) { document.getElementById("cl_msg").textContent = "Error: " + e.message; }
+  };
+  document.getElementById("cl_remove").onclick = async () => {
+    const days = +document.getElementById("cl_days").value;
+    if (!confirm(`Permanently remove all governors not seen in the last ${days} day(s)?`)) return;
+    try {
+      const r = await post(`/api/players/prune?days=${days}`);
+      document.getElementById("cl_msg").style.color = "var(--green)";
+      document.getElementById("cl_msg").textContent = `Removed ${r.removed} governor(s).`;
+      toast(`Removed ${r.removed}`); loadPlayers();
+    } catch (e) { document.getElementById("cl_msg").textContent = "Error: " + e.message; }
   };
   renderQueue();
 
