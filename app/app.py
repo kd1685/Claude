@@ -1567,8 +1567,11 @@ class HermesBotApp:
         self._last_signal_time  = None
         self._last_signal_pair  = None
         self._last_signal_dir   = None
-        self._hold_streak       = 0   # consecutive HOLD cycles
-        self._adaptive_thr      = None  # None = use config value
+        self._hold_streak       = 0   # consecutive HOLD cycles (kept for compat)
+        self._adaptive_thr      = None  # None = use config value (kept for compat)
+        self._adaptive_engine   = AdaptiveTriggerEngine()
+        self._fee_maker         = 0.0002
+        self._fee_taker         = 0.0006
         self._dead_pairs     = set()
         self._live_balance   = None   # cached MEXC account data
         self._balance_fetch  = 0      # timestamp of last fetch  # pairs that returned code 1001
@@ -1654,6 +1657,9 @@ class HermesBotApp:
                                    font=("Consolas", 10, "bold"), fg=AMBER, bg=BG2,
                                    padx=10)
         self.mode_lbl.pack(side="right", padx=4)
+        self.overnight_lbl = tk.Label(hi, text="", font=("Consolas", 9, "bold"),
+                                       fg=TEAL, bg=BG2, padx=6)
+        self.overnight_lbl.pack(side="right", padx=2)
         self.status_dot = tk.Label(hi, text="●", font=FMB, fg=DIM, bg=BG2)
         self.status_dot.pack(side="right", padx=4)
 
@@ -1678,7 +1684,6 @@ class HermesBotApp:
 
         self._build_sidebar(left)
         self._build_metrics(right)
-        self._build_claude_panel(right)
         self._build_tabs(right)
 
     # ── SIDEBAR ────────────────────────────────────────────────────────────────
@@ -1958,29 +1963,10 @@ class HermesBotApp:
         self.hedge_thresh_cb = self._combo(self._lrow(s4, "Hedge at"),
             ["-0.5%","-1.0%","-1.5%","-2.0%","-2.5%","-3.0%","-5.0%"], "-3.0%")
 
-        # ── Adaptive Threshold ────────────────────────────────────────────────
-        s5 = self._section(p, "ADAPTIVE THRESHOLD", CYAN)
-
-        ar = tk.Frame(s5, bg=BG2); ar.pack(fill="x", pady=(0,4))
-        self.adaptive_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(ar, text="Enable", variable=self.adaptive_var,
-                       bg=BG2, fg=CYAN, selectcolor=BG3,
-                       activebackground=BG2, font=FMS,
-                       command=self._on_adaptive_toggle).pack(side="left")
-        self._adaptive_status_lbl = tk.Label(ar, text="ON",
-            font=("Consolas", 8, "bold"), fg=CYAN, bg=BG2)
-        self._adaptive_status_lbl.pack(side="left", padx=(8,0))
-
-        tk.Label(s5,
-            text="Relaxes signal threshold during\nlong HOLD streaks to find more trades.",
-            font=("Consolas", 8), fg=DIM, bg=BG2,
-            justify="left", wraplength=250).pack(fill="x", pady=(0,4))
-
-        self._adaptive_info = tk.Label(s5,
-            text="Relaxes after 20 cycles → -0.5\n              40 cycles → -1.0",
-            font=("Consolas", 8), fg=DIM, bg=BG2,
-            justify="left")
-        self._adaptive_info.pack(fill="x")
+        # ── Adaptive Threshold (now engine-based, no manual toggle needed) ─────
+        self.adaptive_var = tk.BooleanVar(value=True)  # kept for compat
+        self._adaptive_status_lbl = tk.Label(p, text="", bg=BG)  # hidden compat label
+        self._adaptive_info = tk.Label(p, text="", bg=BG)        # hidden compat label
 
         # ── Overnight Mode ────────────────────────────────────────────────
         night_outer = tk.Frame(p, bg=TEAL, padx=2, pady=2)
@@ -1996,12 +1982,10 @@ class HermesBotApp:
         ni2.pack(fill="x")
 
         self.overnight_var = tk.BooleanVar(value=False)
-        self.overnight_btn = tk.Button(ni2,
-            text="  OFF  —  click to enable",
-            font=("Consolas", 9, "bold"), bg=BG3, fg=MUTED,
-            relief="flat", cursor="hand2", pady=5, anchor="w",
-            command=self._toggle_overnight)
-        self.overnight_btn.pack(fill="x", pady=(0, 4))
+        self._overnight_status_lbl = tk.Label(ni2, text="Auto-managed based on UTC time",
+            font=("Consolas", 8), fg=DIM, bg=BG2, anchor="w")
+        self._overnight_status_lbl.pack(fill="x", pady=(0, 4))
+        self.overnight_btn = tk.Label(ni2, text="", bg=BG2)  # compat stub
 
         tk.Label(ni2,
             text="Relaxes filters for low-volume\novernight sessions:",
@@ -2125,22 +2109,8 @@ class HermesBotApp:
         self._claude_reason_lbl.pack(fill="x", pady=(2, 0))
 
     def _update_claude_panel(self, signals, reasoning=None):
-        """Update Claude reasoning text in the persistent panel."""
-        def _do():
-            # Claude reasoning text + status
-            if reasoning:
-                self._claude_reason_lbl.config(text=reasoning, fg=SUB)
-                self._claude_panel_status.config(text="● LIVE", fg=GREEN)
-            elif self.claude_enabled.get():
-                self._claude_panel_status.config(
-                    text="● Active — analyses every signal and HOLD cycle", fg=AMBER)
-            else:
-                self._claude_panel_status.config(
-                    text="● OFF — enable Claude in sidebar", fg=DIM)
-                self._claude_reason_lbl.config(
-                    text="Enable Claude AI in the sidebar → toggle ON → paste key → Test.",
-                    fg=DIM)
-        self.root.after(0, _do)
+        """No-op — Claude panel removed; Claude runs async post-entry only."""
+        pass
 
 
 
@@ -3114,7 +3084,7 @@ class HermesBotApp:
         d = pos.direction
         raw = (px - pos.entry_price) / pos.entry_price if d == "LONG"               else (pos.entry_price - px) / pos.entry_price
         gross_pnl = raw * pos.leverage * pos.margin
-        fee    = pos.size_usdt * 0.002   # 0.2% round-trip taker fees
+        fee    = pos.size_usdt * (self._fee_taker * 2)   # round-trip taker fees
         pnl    = round(gross_pnl - fee, 4)
         status = "WIN" if pnl >= 0 else "LOSS"
 
@@ -3137,6 +3107,7 @@ class HermesBotApp:
             self.state.balance = round(self.state.balance + pnl, 4)
         if pnl >= 0: self.state.wins  += 1
         else:        self.state.losses += 1
+        self._adaptive_engine.log_trade(pnl >= 0)
 
         self.state.trades.append({
             "symbol": pos.symbol, "direction": d,
@@ -3198,6 +3169,20 @@ class HermesBotApp:
         """RSI limit for dual-TF entry filter. Loosened in overnight mode."""
         return 75 if (hasattr(self, "overnight_var") and self.overnight_var.get()) else 65
 
+    def _check_overnight_mode(self):
+        """Auto-detect overnight mode based on UTC hour (22:00-08:00 = overnight)."""
+        hour = datetime.utcnow().hour
+        is_night = hour >= 22 or hour < 8
+        if is_night != self.overnight_var.get():
+            self.overnight_var.set(is_night)
+            self.root.after(0, lambda: self.overnight_lbl.config(
+                text="🌙 OVERNIGHT" if is_night else "",
+                fg=TEAL))
+            if is_night:
+                self._log("🌙 Overnight mode auto-activated (UTC hour: {})".format(hour), TEAL)
+            else:
+                self._log("☀ Overnight mode auto-deactivated (UTC hour: {})".format(hour), CYAN)
+
     def _adaptive_trigger_cycle(self):
         """How many HOLD cycles before adaptive threshold kicks in."""
         return 10 if (hasattr(self, "overnight_var") and self.overnight_var.get()) else 20
@@ -3205,6 +3190,195 @@ class HermesBotApp:
     def _adaptive_floor(self):
         """Minimum threshold adaptive can relax to."""
         return 3.5 if (hasattr(self, "overnight_var") and self.overnight_var.get()) else 4.0
+
+    def _claude_position_monitor(self, pid):
+        """
+        Background thread: monitors an open position every 30s.
+        Runs claude_sl_update, claude_near_tp_check, claude_stale_trade_check,
+        claude_hedge_check as appropriate. Exits when position closes.
+        """
+        import time as _t
+        while self.bot_running and not self._stop_event.is_set():
+            _t.sleep(30)
+            if pid not in self.state.positions:
+                return  # position closed
+
+            pos    = self.state.positions[pid]
+            ck     = self.claude_entry.get().strip() if self.claude_enabled.get() else ""
+            if not ck or not self.claude_enabled.get():
+                continue
+
+            cur_px = self.current_prices.get(pos.symbol, pos.entry_price)
+            sig    = self.pair_signals.get(pos.symbol) or {}
+            dry    = self.dry_var.get()
+            ak     = self.mexc_key_e.get().strip()
+            asc    = self.mexc_sec_e.get().strip()
+            sl     = self._sl(); tp = self._tp()
+            mg     = float(self.margin_e.get())
+            lev    = pos.leverage
+            hedge_on = self.hedge_var.get()
+
+            if pos.direction == "LONG":
+                raw_chg = (cur_px - pos.entry_price) / pos.entry_price
+            else:
+                raw_chg = (pos.entry_price - cur_px) / pos.entry_price
+            drawdown_pct = raw_chg * pos.leverage * 100
+
+            # Track price history
+            hist = self._price_history.setdefault(pid, [])
+            hist.append((_t.time(), cur_px))
+            if len(hist) > 5: hist.pop(0)
+
+            velocity_pct = 0.0
+            if len(hist) >= 3:
+                oldest_px = hist[-3][1]
+                if pos.direction == "LONG":
+                    velocity_pct = (cur_px - oldest_px) / pos.entry_price * 100
+                else:
+                    velocity_pct = (oldest_px - cur_px) / pos.entry_price * 100
+
+            def _track_cost(tok):
+                cost = tok * 0.000001 * 1.5
+                self._claude_tokens += tok
+                self._claude_cost    = round(self._claude_cost + cost, 6)
+                self._claude_calls  += 1
+                self.root.after(0, lambda: (
+                    self._cost_lbl.config(text=f"${self._claude_cost:.4f}",
+                        fg=AMBER if self._claude_cost > 0.01 else DIM),
+                    self._calls_lbl.config(text=f"{self._claude_calls} calls")
+                ) if hasattr(self, "_cost_lbl") else None)
+
+            # SL update: if losing and moving against us
+            if drawdown_pct < -1.0 and velocity_pct < -0.05:
+                result = claude_sl_update(pos, cur_px, drawdown_pct, velocity_pct, sig, ck)
+                if result:
+                    _track_cost(result.get("tokens_used", 0))
+                    action = result["action"]
+                    reason = result["reason"]
+                    if action == "TIGHTEN" and pid in self.state.positions:
+                        new_sl = result["new_sl_price"]
+                        old_sl = pos.stop_loss
+                        self.state.positions[pid].stop_loss = new_sl
+                        self._log(f"AI SL TIGHTENED: {pos.direction} {pair_label(pos.symbol)} "
+                                  f"SL ${old_sl:,.4f} → ${new_sl:,.4f}  ({reason})", AMBER)
+                        self._ai_log_event(pid, "🔒 SL TIGHTENED",
+                            f"${old_sl:,.4f} → ${new_sl:,.4f}\n{reason}", AMBER)
+                        self._save()
+                    elif action == "CLOSE" and pid in self.state.positions:
+                        self._log(f"AI CLOSE SIGNAL: {pos.direction} {pair_label(pos.symbol)} — {reason}", RED)
+                        self._ai_log_event(pid, "🚨 AI CLOSE",
+                            f"Adverse momentum — closing now @ ${cur_px:,.4f}\n{reason}", RED)
+                        if pos.direction == "LONG":
+                            self.state.positions[pid].stop_loss = cur_px * 1.0001
+                        else:
+                            self.state.positions[pid].stop_loss = cur_px * 0.9999
+
+            if pid not in self.state.positions:
+                return
+
+            # Near-TP check
+            if not pos.hedge_of:
+                tp_total = abs(pos.take_profit - pos.entry_price)
+                tp_left  = abs(pos.take_profit - cur_px)
+                pct_to_tp = (tp_left / tp_total * 100) if tp_total else 100
+                in_profit = ((cur_px > pos.entry_price) if pos.direction=="LONG"
+                             else (cur_px < pos.entry_price))
+                near_tp_key = f"near_tp_{pid}"
+                already_checked = getattr(self, near_tp_key, 0)
+                if in_profit and pct_to_tp <= 20.0 and _t.time() - already_checked > 120:
+                    setattr(self, near_tp_key, _t.time())
+                    result = claude_near_tp_check(pos, cur_px, pct_to_tp, sig, ck)
+                    if result:
+                        _track_cost(result.get("tokens_used", 0))
+                        action = result["action"]
+                        reason = result["reason"]
+                        if action == "TAKE" and pid in self.state.positions:
+                            self._log(f"AI TAKE PROFIT: {pos.direction} {pair_label(pos.symbol)} "
+                                      f"@ ${cur_px:,.4f} ({pct_to_tp:.0f}% from TP) — {reason}", GREEN)
+                            self._ai_log_event(pid, "💰 TAKE PROFIT EARLY",
+                                f"{pct_to_tp:.0f}% gap remaining — taking profit now @ ${cur_px:,.4f}\n{reason}", GREEN)
+                            if pos.direction == "LONG":
+                                self.state.positions[pid].stop_loss = cur_px * 0.9999
+                            else:
+                                self.state.positions[pid].stop_loss = cur_px * 1.0001
+                        else:
+                            self._ai_log_event(pid, "⏳ NEAR-TP HOLD",
+                                f"{pct_to_tp:.0f}% gap remaining — holding\n{reason}", CYAN)
+
+            if pid not in self.state.positions:
+                return
+
+            # Stale trade check (45+ minutes open)
+            if not pos.hedge_of:
+                try:
+                    opened = datetime.fromisoformat(pos.opened_at.replace("Z", "+00:00"))
+                    mins_open = (datetime.now(timezone.utc) - opened).total_seconds() / 60
+                except Exception:
+                    mins_open = 0
+                max_drift = abs(self._price_peak.get(pid, pos.entry_price)
+                                - pos.entry_price) / pos.entry_price * 100
+                stale_key = f"stale_{pid}"
+                already_stale = getattr(self, stale_key, 0)
+                if (mins_open >= 45 and max_drift < 0.15
+                        and pid not in self._stale_checked
+                        and _t.time() - already_stale > 1800):
+                    setattr(self, stale_key, _t.time())
+                    self._stale_checked.add(pid)
+                    result = claude_stale_trade_check(pos, cur_px, mins_open, max_drift, sig, ck)
+                    if result:
+                        _track_cost(result.get("tokens_used", 0))
+                        action = result["action"]
+                        reason = result["reason"]
+                        if action == "CLOSE" and pid in self.state.positions:
+                            self._log(f"AI STALE CLOSE: {pos.direction} {pair_label(pos.symbol)} "
+                                      f"open {mins_open:.0f}min drift {max_drift:.3f}% — {reason}", AMBER)
+                            self._ai_log_event(pid, "⌛ STALE — CLOSING",
+                                f"Open {mins_open:.0f}min, only {max_drift:.3f}% drift\n{reason}", AMBER)
+                            if pos.direction == "LONG":
+                                self.state.positions[pid].stop_loss = cur_px * 0.9999
+                            else:
+                                self.state.positions[pid].stop_loss = cur_px * 1.0001
+                        else:
+                            self._ai_log_event(pid, "⌛ STALE HOLD",
+                                f"Open {mins_open:.0f}min — holding\n{reason}", DIM)
+
+            if pid not in self.state.positions:
+                return
+
+            # AI hedge check
+            if not pos.hedge_of and not hedge_on:
+                if raw_chg * lev * 100 <= -2.0:
+                    already_hedged = any(p.hedge_of == pid for p in self.state.positions.values())
+                    if not already_hedged:
+                        dd = raw_chg * lev * 100
+                        result = claude_hedge_check(pos, cur_px, dd, sig, ck)
+                        if result:
+                            _track_cost(result.get("tokens_used", 0))
+                            if result["action"] == "HEDGE" and pid in self.state.positions:
+                                still_hedged = any(x.hedge_of == pid
+                                                   for x in self.state.positions.values())
+                                if not still_hedged:
+                                    hedge_dir = "SHORT" if pos.direction == "LONG" else "LONG"
+                                    hid = self._open_position(
+                                        pos.symbol, hedge_dir, cur_px, mg * 0.5, lev,
+                                        sl, tp, dry, ak, asc, hedge_of=pid)
+                                    if hid:
+                                        conf = result["confidence"]
+                                        reason = result["reason"]
+                                        self._log(f"AI HEDGE [{conf}%]: {hedge_dir} "
+                                                  f"{pair_label(pos.symbol)} — {reason}", AMBER)
+                                        self._ai_log_event(pid, f"⇄ AI HEDGE [{conf}%]",
+                                            f"Opened {hedge_dir} hedge @ ${cur_px:,.4f}\n{reason}", AMBER)
+                                        self._refresh_metrics(); self._save()
+
+            # Monitor log entry
+            if pid in self.state.positions:
+                col = GREEN if drawdown_pct >= 0 else RED
+                self._ai_log_event(pid, "📊 MONITOR",
+                    f"Price ${cur_px:,.4f}  margin {drawdown_pct:+.1f}%  "
+                    f"SL ${pos.stop_loss:,.4f}  TP ${pos.take_profit:,.4f}  "
+                    f"RSI {sig.get('rsi',0):.0f}  {sig.get('trend','—')}",
+                    col)
 
     def _reset_defaults(self):
         """Reset all config to optimised defaults and delete saved config."""
@@ -3352,6 +3526,13 @@ class HermesBotApp:
         self.nb.select(len(PAIRS))
         self.bot_thread = threading.Thread(target=self._loop, daemon=True)
         self.bot_thread.start()
+        # Fetch actual fee rates in background (live mode only)
+        if not self.dry_var.get():
+            def _ff():
+                mk, tk = fetch_fee_rate(self.mexc_key_e.get().strip(), self.mexc_sec_e.get().strip())
+                self._fee_maker, self._fee_taker = mk, tk
+                self._log(f"Fees: maker {mk*100:.3f}% taker {tk*100:.3f}%", CYAN)
+            threading.Thread(target=_ff, daemon=True).start()
 
     def _stop(self):
         self.bot_running = False; self._stop_event.set()
@@ -3366,6 +3547,7 @@ class HermesBotApp:
         while self.bot_running and not self._stop_event.is_set():
             cycle += 1
             try:
+                self._check_overnight_mode()
                 lev  = self._lev()
                 mg   = float(self.margin_e.get())
                 sl   = self._sl(); tp = self._tp()
@@ -3484,7 +3666,9 @@ class HermesBotApp:
                         else:
                             scan_errors.append(f"{pair_label(p)}: {err_str[:60]}")
 
-                _thr_eff = self._adaptive_thr if self._adaptive_thr else thr
+                # Update adaptive engine base threshold and compute effective threshold
+                self._adaptive_engine.base_threshold = thr
+                _thr_eff = thr  # default; adaptive engine used per-pair below
                 # Stagger launches to avoid MEXC rate limit
                 threads = []
                 for p in _scan_pairs:
@@ -3497,6 +3681,11 @@ class HermesBotApp:
                 if scan_errors:
                     for err in scan_errors:
                         self._log(err, AMBER)
+
+                # Update ATR history for adaptive engine
+                for p, s in all_sigs.items():
+                    if s.get("atr_pct"):
+                        self._adaptive_engine.update_atr(p, s["atr_pct"])
 
                 if not all_sigs:
                     self._log("No data from any pair — skipping cycle", RED)
@@ -3543,234 +3732,8 @@ class HermesBotApp:
                             try: delattr(self, attr)
                             except AttributeError: pass
 
-                # ── Dynamic SL: ask Claude to tighten SL if trade going bad fast ──
-                if ck and self.claude_enabled.get():
-                    for pid in list(self.state.positions.keys()):
-                        if pid not in self.state.positions: continue
-                        pos = self.state.positions[pid]
-                        cur_px = self.current_prices.get(pos.symbol, pos.entry_price)
-
-                        # Track price history for this position (keep last 5 data points)
-                        hist = self._price_history.setdefault(pid, [])
-                        hist.append((time.time(), cur_px))
-                        if len(hist) > 5:
-                            hist.pop(0)
-
-                        # Calculate current drawdown on margin
-                        if pos.direction == "LONG":
-                            raw_chg = (cur_px - pos.entry_price) / pos.entry_price
-                        else:
-                            raw_chg = (pos.entry_price - cur_px) / pos.entry_price
-                        drawdown_pct = raw_chg * pos.leverage * 100  # negative = losing
-
-                        # Calculate velocity: price move per cycle over last 3 points
-                        velocity_pct = 0.0
-                        if len(hist) >= 3:
-                            oldest_px = hist[-3][1]
-                            if pos.direction == "LONG":
-                                velocity_pct = (cur_px - oldest_px) / pos.entry_price * 100
-                            else:
-                                velocity_pct = (oldest_px - cur_px) / pos.entry_price * 100
-                            # velocity_pct < 0 means moving against us
-
-                        # Trigger Claude if: losing AND moving against us fast
-                        # Threshold: drawdown > -1% on margin AND velocity < -0.05% per cycle
-                        trigger_drawdown  = drawdown_pct < -1.0
-                        trigger_velocity  = velocity_pct < -0.05
-                        if trigger_drawdown and trigger_velocity:
-                            sig = self.pair_signals.get(pos.symbol) or {}
-                            def _bg_sl(p=pos, px=cur_px, dd=drawdown_pct,
-                                       vel=velocity_pct, s=sig, c=ck):
-                                result = claude_sl_update(p, px, dd, vel, s, c)
-                                if not result:
-                                    return
-                                action = result["action"]
-                                reason = result["reason"]
-                                tok    = result.get("tokens_used", 0)
-                                cost   = tok * 0.000001 * 1.5
-                                self._claude_tokens += tok
-                                self._claude_cost    = round(self._claude_cost + cost, 6)
-                                self._claude_calls  += 1
-                                self.root.after(0, lambda: (
-                                    self._cost_lbl.config(
-                                        text=f"${self._claude_cost:.4f}",
-                                        fg=AMBER if self._claude_cost > 0.01 else DIM),
-                                    self._calls_lbl.config(
-                                        text=f"{self._claude_calls} calls")
-                                ) if hasattr(self, "_cost_lbl") else None)
-
-                                if action == "TIGHTEN":
-                                    new_sl = result["new_sl_price"]
-                                    if p.id in self.state.positions:
-                                        old_sl = p.stop_loss
-                                        self.state.positions[p.id].stop_loss = new_sl
-                                        self._log(
-                                            f"AI SL TIGHTENED: {p.direction} "
-                                            f"{pair_label(p.symbol)} "
-                                            f"SL ${old_sl:,.4f} → ${new_sl:,.4f}  "
-                                            f"({reason})", AMBER)
-                                        self._ai_log_event(p.id, "🔒 SL TIGHTENED",
-                                            f"${old_sl:,.4f} → ${new_sl:,.4f}\n{reason}", AMBER)
-                                        self._save()
-                                elif action == "CLOSE":
-                                    # Force immediate close by setting SL = current price
-                                    if p.id in self.state.positions:
-                                        self._log(
-                                            f"AI CLOSE SIGNAL: {p.direction} "
-                                            f"{pair_label(p.symbol)} — {reason}", RED)
-                                        self._ai_log_event(p.id, "🚨 AI CLOSE",
-                                            f"Adverse momentum — closing now @ ${cur_px:,.4f}\n{reason}", RED)
-                                        if p.direction == "LONG":
-                                            self.state.positions[p.id].stop_loss = cur_px * 1.0001
-                                        else:
-                                            self.state.positions[p.id].stop_loss = cur_px * 0.9999
-                                else:
-                                    self._log(
-                                        f"AI SL HOLD: {p.direction} "
-                                        f"{pair_label(p.symbol)} — {reason}", DIM)
-                                    self._ai_log_event(p.id, "✋ SL HOLD",
-                                        reason, DIM)
-                            threading.Thread(target=_bg_sl, daemon=True).start()
-
-                # ── Near-TP early exit + stale trade checks ──────────────────
-                if ck and self.claude_enabled.get():
-                    for pid in list(self.state.positions.keys()):
-                        if pid not in self.state.positions: continue
-                        pos    = self.state.positions[pid]
-                        if pos.hedge_of: continue
-                        cur_px = self.current_prices.get(pos.symbol, pos.entry_price)
-                        sig    = self.pair_signals.get(pos.symbol) or {}
-
-                        # Track best (most profitable) price seen for this position
-                        d = pos.direction
-                        peak = self._price_peak.get(pid, pos.entry_price)
-                        if d == "LONG":
-                            if cur_px > peak: self._price_peak[pid] = cur_px
-                        else:
-                            if cur_px < peak: self._price_peak[pid] = cur_px
-
-                        tp_total = abs(pos.take_profit - pos.entry_price)
-                        tp_left  = abs(pos.take_profit - cur_px)
-                        pct_to_tp = (tp_left / tp_total * 100) if tp_total else 100
-
-                        # ── Near-TP: within 20% of TP gap remaining ───────────
-                        in_profit = ((cur_px > pos.entry_price) if d=="LONG"
-                                     else (cur_px < pos.entry_price))
-                        near_tp_key = f"near_tp_{pid}"
-                        already_checked_near = getattr(self, near_tp_key, 0)
-                        if (in_profit and pct_to_tp <= 20.0
-                                and time.time() - already_checked_near > 120):
-                            setattr(self, near_tp_key, time.time())
-                            def _bg_near_tp(p=pos, px=cur_px, ptt=pct_to_tp,
-                                            s=sig, c=ck):
-                                result = claude_near_tp_check(p, px, ptt, s, c)
-                                if not result: return
-                                tok  = result.get("tokens_used", 0)
-                                cost = tok * 0.000001 * 1.5
-                                self._claude_tokens += tok
-                                self._claude_cost    = round(self._claude_cost + cost, 6)
-                                self._claude_calls  += 1
-                                action = result["action"]
-                                reason = result["reason"]
-                                if action == "TAKE":
-                                    self._log(
-                                        f"AI TAKE PROFIT: {p.direction} "
-                                        f"{pair_label(p.symbol)} @ ${px:,.4f} "
-                                        f"({ptt:.0f}% from TP) — {reason}", GREEN)
-                                    self._ai_log_event(p.id, "💰 TAKE PROFIT EARLY",
-                                        f"{ptt:.0f}% gap remaining — taking profit now @ ${px:,.4f}\n{reason}", GREEN)
-                                    if p.id in self.state.positions:
-                                        if p.direction == "LONG":
-                                            self.state.positions[p.id].stop_loss = px * 0.9999
-                                        else:
-                                            self.state.positions[p.id].stop_loss = px * 1.0001
-                                else:
-                                    self._log(
-                                        f"AI TP HOLD: {p.direction} "
-                                        f"{pair_label(p.symbol)} — {reason}", DIM)
-                                    self._ai_log_event(p.id, "⏳ NEAR-TP HOLD",
-                                        f"{ptt:.0f}% gap remaining — holding for full TP\n{reason}", CYAN)
-                            threading.Thread(target=_bg_near_tp, daemon=True).start()
-
-                        # ── Stale trade: open > 45min with <0.15% drift ───────
-                        try:
-                            from datetime import datetime, timezone as _tz
-                            opened = datetime.fromisoformat(
-                                pos.opened_at.replace("Z", "+00:00"))
-                            mins_open = (datetime.now(_tz.utc) - opened
-                                         ).total_seconds() / 60
-                        except Exception:
-                            mins_open = 0
-
-                        max_drift = abs(self._price_peak.get(pid, pos.entry_price)
-                                        - pos.entry_price) / pos.entry_price * 100
-
-                        stale_key = f"stale_{pid}"
-                        already_stale = getattr(self, stale_key, 0)
-                        if (mins_open >= 45 and max_drift < 0.15
-                                and pid not in self._stale_checked
-                                and time.time() - already_stale > 1800):
-                            setattr(self, stale_key, time.time())
-                            self._stale_checked.add(pid)
-                            def _bg_stale(p=pos, px=cur_px, mo=mins_open,
-                                          md=max_drift, s=sig, c=ck,
-                                          _dry=dry, _ak=ak, _asc=asc):
-                                result = claude_stale_trade_check(p, px, mo, md, s, c)
-                                if not result: return
-                                tok  = result.get("tokens_used", 0)
-                                cost = tok * 0.000001 * 1.5
-                                self._claude_tokens += tok
-                                self._claude_cost    = round(self._claude_cost + cost, 6)
-                                self._claude_calls  += 1
-                                action = result["action"]
-                                reason = result["reason"]
-                                if action == "CLOSE":
-                                    self._log(
-                                        f"AI STALE CLOSE: {p.direction} "
-                                        f"{pair_label(p.symbol)} open {mo:.0f}min "
-                                        f"drift only {md:.3f}% — {reason}", AMBER)
-                                    self._ai_log_event(p.id, "⌛ STALE — CLOSING",
-                                        f"Open {mo:.0f}min, only {md:.3f}% drift — freeing margin\n{reason}", AMBER)
-                                    if p.id in self.state.positions:
-                                        if p.direction == "LONG":
-                                            self.state.positions[p.id].stop_loss = px * 0.9999
-                                        else:
-                                            self.state.positions[p.id].stop_loss = px * 1.0001
-                                else:
-                                    self._log(
-                                        f"AI stale HOLD: {p.direction} "
-                                        f"{pair_label(p.symbol)} {mo:.0f}min — {reason}", DIM)
-                                    self._ai_log_event(p.id, "⌛ STALE HOLD",
-                                        f"Open {mo:.0f}min — holding longer\n{reason}", DIM)
-                            threading.Thread(target=_bg_stale, daemon=True).start()
-
-                # ── Claude trade monitoring log (every 5 cycles with open positions) ─
-                if ck and self.claude_enabled.get() and self.state.positions:
-                    if cycle % 5 == 0:
-                        for pid, pos in list(self.state.positions.items()):
-                            if pos.hedge_of: continue
-                            cur_px = self.current_prices.get(pos.symbol, pos.entry_price)
-                            sig    = self.pair_signals.get(pos.symbol) or {}
-                            if not sig: continue
-                            raw_chg = ((cur_px - pos.entry_price)/pos.entry_price
-                                       if pos.direction=="LONG"
-                                       else (pos.entry_price - cur_px)/pos.entry_price)
-                            margin_pct = raw_chg * pos.leverage * 100
-                            col = GREEN if margin_pct >= 0 else RED
-                            self._log(
-                                f"📊 {pos.direction} {pair_label(pos.symbol)} "
-                                f"entry ${pos.entry_price:,.4f} → now ${cur_px:,.4f}  "
-                                f"margin {margin_pct:+.1f}%  "
-                                f"SL ${pos.stop_loss:,.4f}  TP ${pos.take_profit:,.4f}", col)
-                            self._ai_log_event(pid, "📊 MONITOR",
-                                f"Price ${cur_px:,.4f}  margin {margin_pct:+.1f}%  "
-                                f"SL ${pos.stop_loss:,.4f}  TP ${pos.take_profit:,.4f}  "
-                                f"RSI {sig.get('rsi',0):.0f}  {sig.get('trend','—')}",
-                                col)
-
-                # ── Hedge checks across all open positions ────────────────────
-                # Rule-based hedge: fires when hedge toggle ON and drawdown exceeds threshold
-                # AI hedge: fires independently when Claude is enabled, regardless of toggle
+                # ── Rule-based hedge checks ──────────────────────────────────
+                # (AI hedge logic now runs in _claude_position_monitor)
                 for pid, pos in list(self.state.positions.items()):
                     if pos.hedge_of: continue
                     cur_px = self.current_prices.get(pos.symbol, pos.entry_price)
@@ -3783,8 +3746,6 @@ class HermesBotApp:
                     if already_hedged:
                         continue
 
-                    hedge_opened = False
-
                     # ── Rule-based hedge (toggle must be ON) ──────────────────
                     if hedge_on and lev_chg <= hedge_thr:
                         hedge_dir = "SHORT" if d == "LONG" else "LONG"
@@ -3796,60 +3757,6 @@ class HermesBotApp:
                                       f"(rule-based  drawdown {lev_chg*100:.1f}%)", AMBER)
                             self._refresh_metrics(); self._save()
                             self.root.after(0, self._refresh_trades_tab)
-                            hedge_opened = True
-
-                    # ── AI hedge (Claude enabled, toggle OFF, drawdown meaningful) ──
-                    # Only run if rule-based hedge didn't already fire,
-                    # and drawdown is at least -2% on margin (not just noise)
-                    if not hedge_opened and ck and self.claude_enabled.get() and not hedge_on:
-                        if lev_chg * 100 <= -2.0:
-                            sig = self.pair_signals.get(pos.symbol) or {}
-                            drawdown_pct = lev_chg * 100
-                            def _bg_hedge(p=pos, px=cur_px, dd=drawdown_pct,
-                                          s=sig, c=ck, _sl=sl, _tp=tp,
-                                          _mg=mg, _lev=lev, _dry=dry,
-                                          _ak=ak, _asc=asc):
-                                result = claude_hedge_check(p, px, dd, s, c)
-                                if not result:
-                                    return
-                                tok  = result.get("tokens_used", 0)
-                                cost = tok * 0.000001 * 1.5
-                                self._claude_tokens += tok
-                                self._claude_cost    = round(self._claude_cost + cost, 6)
-                                self._claude_calls  += 1
-                                self.root.after(0, lambda: (
-                                    self._cost_lbl.config(
-                                        text=f"${self._claude_cost:.4f}",
-                                        fg=AMBER if self._claude_cost > 0.01 else DIM),
-                                    self._calls_lbl.config(
-                                        text=f"{self._claude_calls} calls")
-                                ) if hasattr(self, "_cost_lbl") else None)
-
-                                if result["action"] == "HEDGE":
-                                    conf   = result["confidence"]
-                                    reason = result["reason"]
-                                    # Re-check not already hedged (race condition guard)
-                                    if p.id not in self.state.positions: return
-                                    still_hedged = any(x.hedge_of == p.id
-                                                       for x in self.state.positions.values())
-                                    if still_hedged: return
-                                    hedge_dir = "SHORT" if p.direction == "LONG" else "LONG"
-                                    hid = self._open_position(
-                                        p.symbol, hedge_dir, px, _mg * 0.5, _lev,
-                                        _sl, _tp, _dry, _ak, _asc, hedge_of=p.id)
-                                    if hid:
-                                        self._log(
-                                            f"AI HEDGE [{conf}%]: {hedge_dir} "
-                                            f"{pair_label(p.symbol)} — {reason}", AMBER)
-                                        self._ai_log_event(p.id, f"⇄ AI HEDGE [{conf}%]",
-                                            f"Opened {hedge_dir} hedge @ ${px:,.4f}\n{reason}", AMBER)
-                                        self._refresh_metrics(); self._save()
-                                        self.root.after(0, self._refresh_trades_tab)
-                                else:
-                                    self._log(
-                                        f"AI hedge HOLD: {p.direction} "
-                                        f"{pair_label(p.symbol)} — {result['reason']}", DIM)
-                            threading.Thread(target=_bg_hedge, daemon=True).start()
 
                 # ── Refresh H1 trend every 10 cycles ─────────────────────────
                 if cycle % 10 == 1 or not self._h1_trends:
@@ -3893,8 +3800,7 @@ class HermesBotApp:
                     div = sig.get("rsi_divergence")
                     if div == "BEARISH" and d == "LONG":  reasons.append("bearish RSI divergence")
                     if div == "BULLISH" and d == "SHORT": reasons.append("bullish RSI divergence")
-                    # Volume hard filter: require vol_ratio > 1.1
-                    if sig.get("vol_ratio", 1.0) < 1.1: reasons.append(f"low volume {sig.get('vol_ratio',0):.1f}x")
+                    # Volume is NOT a hard block — low volume just reduces position size
                     # Funding rate block
                     fn = sig.get("funding", 0)
                     if d == "LONG"  and fn >  5.0: reasons.append(f"funding {fn:+.2f}% vs LONG")
@@ -3930,219 +3836,127 @@ class HermesBotApp:
                     else:
                         self._log(f"  ↷ {pair_label(p)} {s['direction']} filtered: {reason}", DIM)
 
-                # Update claude panel with best signal found (or top pair if all HOLD)
-                top_pair, top_sig = candidates[0] if candidates else                     sorted(all_sigs.items(), key=lambda x: x[1]["score"], reverse=True)[0]
-                self.root.after(0, lambda s={**top_sig,"symbol":top_pair}: self._update_claude_panel(s))
+                # Top signal for display
+                if candidates:
+                    top_pair, top_sig = candidates[0]
+                elif all_sigs:
+                    top_pair, top_sig = sorted(all_sigs.items(),
+                        key=lambda x: x[1]["score"], reverse=True)[0]
+                else:
+                    top_pair, top_sig = None, {}
 
                 if n_open >= maxt:
                     self._log(f"Max trades ({maxt}) reached — monitoring only", DIM)
-                    self._hold_streak = 0
 
                 elif candidates:
-                    # Signal found — update tracking and reset adaptive threshold
+                    # Signal found
                     best_pair, best_sig = candidates[0]
                     self._last_signal_pair = best_pair
                     self._last_signal_time = time.time()
                     self._last_signal_dir  = best_sig["direction"]
                     self._hold_streak      = 0
-                    self._adaptive_thr     = None  # signal found, restore normal threshold
-                    self.root.after(0, lambda: self._adaptive_info.config(text="Relaxes after 20cy / 40cy", fg=DIM) if hasattr(self,"_adaptive_info") else None)
                     best_px = self.current_prices.get(best_pair, 0)
 
-                    # Check we don't already have this pair+direction (unless stacking)
-                    existing_same = [p for p in self.state.positions.values()
-                                     if p.symbol == best_pair
-                                     and p.direction == best_sig["direction"]
-                                     and not p.hedge_of]
-                    is_long   = best_sig["direction"] == "LONG"
-                    can_stack = (stack_on and is_long
-                                 and best_sig["score"] >= stack_thr
-                                 and len(existing_same) < stack_max)
+                    # ── Adaptive threshold check using the engine ────────────
+                    entry_thr = self._adaptive_engine.get_threshold(
+                        best_pair, best_sig.get("atr_pct", 0))
+                    vr = best_sig.get("vol_ratio", 1.0)
+                    if vr < 1.0:
+                        entry_thr += 0.5  # need stronger signal in low-vol environments
 
-                    if not existing_same or can_stack:
-                        contract_n = len(existing_same) + 1
-                        stack_tag  = f" [#{contract_n}]" if contract_n > 1 else ""
-                        conf_tag   = f"  ⚡ HIGH CONF" if can_stack else ""
-                        # Use pair-specific leverage if available
-                        pair_lev = min(lev, PAIR_MAX_LEV.get(best_pair, lev))
-                        self._log(
-                            f"BEST SIGNAL: {best_sig['direction']}{stack_tag} "
-                            f"{best_pair.replace('_USDT','')}  "
-                            f"score {best_sig['score']}/9  RSI {best_sig['rsi']:.1f}  "
-                            f"{best_sig['trend']}{conf_tag}",
-                            BLUE if not can_stack else CYAN)
+                    if best_sig["score"] < entry_thr:
+                        self._log(f"Score {best_sig['score']}/9 < adaptive threshold "
+                                  f"{entry_thr}/9 — skipping", DIM)
+                        best_pair = None  # treat as HOLD
 
-                        # Runner-up for info
-                        if len(candidates) > 1:
-                            ru_p, ru_s = candidates[1]
+                    if best_pair:
+                        # Check we don't already have this pair+direction (unless stacking)
+                        existing_same = [p for p in self.state.positions.values()
+                                         if p.symbol == best_pair
+                                         and p.direction == best_sig["direction"]
+                                         and not p.hedge_of]
+                        is_long   = best_sig["direction"] == "LONG"
+                        can_stack = (stack_on and is_long
+                                     and best_sig["score"] >= stack_thr
+                                     and len(existing_same) < stack_max)
+
+                        if not existing_same or can_stack:
+                            contract_n = len(existing_same) + 1
+                            stack_tag  = f" [#{contract_n}]" if contract_n > 1 else ""
+                            conf_tag   = f"  ⚡ HIGH CONF" if can_stack else ""
+                            pair_lev   = min(lev, PAIR_MAX_LEV.get(best_pair, lev))
+
+                            # ── Volume scaling (not a hard block) ────────────
+                            vol_scale = 1.0
+                            if vr < 0.8:
+                                vol_scale = 0.5
+                                self._log(f"Low volume ({vr:.1f}x) — position size halved", AMBER)
+                            elif vr < 1.1:
+                                vol_scale = 0.75
+                                self._log(f"Below-avg volume ({vr:.1f}x) — position size 75%", AMBER)
+                            actual_mg = round(mg * vol_scale, 2)
+
                             self._log(
-                                f"Runner-up: {ru_s['direction']} "
-                                f"{ru_p.replace('_USDT','')} {ru_s['score']}/9", DIM)
+                                f"BEST SIGNAL: {best_sig['direction']}{stack_tag} "
+                                f"{best_pair.replace('_USDT','')}  "
+                                f"score {best_sig['score']}/9  RSI {best_sig['rsi']:.1f}  "
+                                f"{best_sig['trend']}{conf_tag}  thr:{entry_thr}/9",
+                                BLUE if not can_stack else CYAN)
 
-                        # ── Claude decision engine ────────────────────────────
-                        final_sl, final_tp = sl, tp
-                        reason = None
+                            if len(candidates) > 1:
+                                ru_p, ru_s = candidates[1]
+                                self._log(
+                                    f"Runner-up: {ru_s['direction']} "
+                                    f"{ru_p.replace('_USDT','')} {ru_s['score']}/9", DIM)
 
-                        # Warn Claude about any existing position on the same pair
-                        existing_on_pair = [p for p in self.state.positions.values()
-                                            if p.symbol == best_pair and not p.hedge_of]
-                        if existing_on_pair:
-                            ep = existing_on_pair[0]
-                            raw_epnl = ((best_px - ep.entry_price)/ep.entry_price
-                                        if ep.direction=="LONG"
-                                        else (ep.entry_price - best_px)/ep.entry_price)
-                            existing_note = (f"⚠ EXISTING {ep.direction} on {pair_label(best_pair)}: "
-                                             f"entry ${ep.entry_price:,.4f}  "
-                                             f"PnL {raw_epnl*ep.leverage*100:+.1f}% margin. "
-                                             f"New signal is {best_sig['direction']} — "
-                                             f"VETO if this contradicts existing trade; "
-                                             f"only allow if clearly a different setup.")
-                            self._log(existing_note, AMBER)
-                            # Inject into signals so claude_decision sees it
-                            best_sig = {**best_sig, "_existing_note": existing_note}
+                            final_sl, final_tp = sl, tp
 
-                        if ck and self.claude_enabled.get():
-                            _last3 = "  |  ".join(
-                                f"{t['direction'][0]} {pair_label(t['symbol'])} "
-                                f"{'+'if t['pnl_usdt']>=0 else ''}{t['pnl_usdt']:.2f}"
-                                for t in self.state.trades[-3:]
-                            ) if self.state.trades else "no trades yet"
-                            decision = claude_decision(
-                                best_sig, self.state, best_pair,
-                                pair_lev, mg, sl, tp, ck, last3=_last3)
-                            if decision:
-                                # Track cost (Haiku: ~$0.80/1M input, $4/1M output)
-                                tok = decision.get("tokens_used", 0)
-                                cost = tok * 0.000001 * 1.5  # blended rate estimate
-                                self._claude_tokens += tok
-                                self._claude_cost   = round(self._claude_cost + cost, 6)
-                                self._claude_calls  += 1
-                                self._last_claude_call = time.time()
-                                self.root.after(0, lambda: (
-                                    self._cost_lbl.config(
-                                        text=f"${self._claude_cost:.4f}",
-                                        fg=AMBER if self._claude_cost > 0.01 else DIM),
-                                    self._calls_lbl.config(
-                                        text=f"{self._claude_calls} calls")
-                                ) if hasattr(self, "_cost_lbl") else None)
-
-                                action = decision["action"]
-                                conf   = decision["confidence"]
-                                reason = decision["reason"]
-                                final_sl = decision["sl_pct"]
-                                final_tp = decision["tp_pct"]
-
-                                if action == "VETO":
-                                    self._log(
-                                        f"AI VETO [{conf}% conf]: {reason}", RED)
-                                    self._update_claude_panel(best_sig,
-                                        reasoning=f"⛔ VETOED ({conf}%): {reason}")
-                                    # Log veto to AI tab under a synthetic key
-                                    import time as _vt
-                                    veto_key = f"VETO_{int(_vt.time())}"
-                                    self._ai_log_event(veto_key, f"⛔ VETO — {pair_label(best_pair)}",
-                                        f"{best_sig['direction']} signal blocked [{conf}% conf]\n{reason}", RED)
-                                    # Skip the trade
-                                    reason = None  # prevent open_position call
-                                    best_pair = None
-                                elif action == "TRADE":
-                                    tp_change = ""
-                                    sl_change = ""
-                                    if abs(final_tp - tp) > 0.0001:
-                                        tp_change = (f" TP {'▲' if final_tp>tp else '▼'}"
-                                                     f"{final_tp*100:.2f}%")
-                                    if abs(final_sl - sl) > 0.0001:
-                                        sl_change = (f" SL {'▲' if final_sl>sl else '▼'}"
-                                                     f"{final_sl*100:.2f}%")
-                                    self._log(
-                                        f"AI TRADE [{conf}% conf]{tp_change}{sl_change}: "
-                                        f"{reason}", CYAN)
-                                else:
-                                    self._log(f"AI: {reason}", PURPLE)
-                            else:
-                                # Claude failed — fall back to indicator decision
-                                self._log("AI unavailable — using indicators", MUTED)
-
-                        self._update_claude_panel(best_sig, reasoning=reason)
-
-                        pid = None  # ensure defined even if vetoed or open_position skipped
-                        if best_pair:  # not vetoed
+                            # Open position immediately based on indicators
                             pid = self._open_position(best_pair, best_sig["direction"],
-                                                       best_px, mg, pair_lev,
+                                                       best_px, actual_mg, pair_lev,
                                                        final_sl, final_tp, dry, ak, asc)
-                        if pid:
-                            pos = self.state.positions[pid]
-                            pc  = GREEN if pos.direction == "LONG" else RED
+                            if pid:
+                                pos = self.state.positions[pid]
+                                pc  = GREEN if pos.direction == "LONG" else RED
+                                self._log(
+                                    f"OPENED {pos.direction}{stack_tag} "
+                                    f"{pair_label(best_pair)} {pair_lev}x  "
+                                    f"@ ${best_px:,.4f}  "
+                                    f"LIQ ${pos.liq_price:,.4f}", pc)
+                                open_reason = (f"Score {best_sig['score']}/9  "
+                                               f"RSI {best_sig['rsi']:.0f}  "
+                                               f"{best_sig['trend']}  thr:{entry_thr}/9  "
+                                               f"vol:{vr:.1f}x  size:{actual_mg}$")
+                                sl_used = f"SL {final_sl*100:.2f}%  TP {final_tp*100:.2f}%"
+                                self._ai_log_event(pid, "TRADE OPENED",
+                                    f"{pos.direction} {pair_label(best_pair)} @ ${best_px:,.4f}  "
+                                    f"{sl_used}\n{open_reason}",
+                                    GREEN if pos.direction=="LONG" else RED)
+                                self._refresh_metrics(); self._save()
+                                self._balance_fetch = 0
+                                self._fetch_live_balance()
+                                self.root.after(0, self._refresh_trades_tab)
+                                # Spawn async Claude monitor
+                                if ck and self.claude_enabled.get():
+                                    _pid = pid
+                                    threading.Thread(
+                                        target=self._claude_position_monitor,
+                                        args=(_pid,), daemon=True).start()
+                        else:
                             self._log(
-                                f"OPENED {pos.direction}{stack_tag} "
-                                f"{pair_label(best_pair)} {pair_lev}x  "
-                                f"@ ${best_px:,.4f}  "
-                                f"LIQ ${pos.liq_price:,.4f}", pc)
-                            open_reason = reason or f"Score {best_sig['score']}/9  RSI {best_sig['rsi']:.0f}  {best_sig['trend']} — indicators only (Claude not available)"
-                            sl_used = f"SL {final_sl*100:.2f}%  TP {final_tp*100:.2f}%"
-                            self._ai_log_event(pid, "TRADE OPENED",
-                                f"{pos.direction} {pair_label(best_pair)} @ ${best_px:,.4f}  {sl_used}  conf {decision['confidence'] if decision else '—'}%\n{open_reason}",
-                                GREEN if pos.direction=="LONG" else RED)
-                            self._refresh_metrics(); self._save()
-                            # Force balance refresh after opening position
-                            self._balance_fetch = 0
-                            self._fetch_live_balance(); self.root.after(0, self._refresh_trades_tab)
-                    else:
-                        self._log(
-                            f"Already in {best_sig['direction']} {best_pair.replace('_USDT','')} "
-                            f"— waiting for exit or different pair", DIM)
+                                f"Already in {best_sig['direction']} {best_pair.replace('_USDT','')} "
+                                f"— waiting for exit or different pair", DIM)
+
                 else:
                     # All pairs HOLD
                     self._hold_streak += 1
-                    # Adaptive threshold — only if toggle is enabled
-                    if self.adaptive_var.get():
-                        # Adaptive drops: -1.0 at trigger_cy, -1.5 at 2x trigger_cy
-                        # Overnight: triggers at 10cy instead of 20cy, floor 3.5 not 4.0
-                        base        = self._thresh()
-                        trigger_cy  = self._adaptive_trigger_cycle()
-                        floor_thr   = self._adaptive_floor()
-                        if self._hold_streak == trigger_cy * 2:
-                            new_thr = max(floor_thr, round(base - 1.5, 1))
-                        elif self._hold_streak == trigger_cy:
-                            new_thr = max(floor_thr, round(base - 1.0, 1))
-                        else:
-                            new_thr = None
-
-                        if new_thr is not None and self._adaptive_thr != new_thr:
-                            self._adaptive_thr = new_thr
-                            icon = "⚡" if self._hold_streak >= trigger_cy * 2 else "↓"
-                            self._log(f"{icon} Adaptive threshold → {new_thr}/9 "
-                                      f"(HOLD streak: {self._hold_streak} cycles"
-                                      f"{' · overnight' if overnight else ''})", AMBER)
-                            self.root.after(0, lambda t=new_thr, s=self._hold_streak, cy=trigger_cy: (
-                                self._adaptive_info.config(
-                                    text=f"{icon} Active → {t}/9  streak {s}cy  (triggers @{cy}cy)",
-                                    fg=AMBER)))
-                    else:
-                        self._adaptive_thr = None
-                    thr_eff = self._adaptive_thr or thr
-                    # Re-rank with relaxed threshold
-                    if self._adaptive_thr:
-                        candidates = [(p, s) for p, s in all_sigs.items()
-                                       if s["direction"] in ("LONG","SHORT")
-                                       and s["score"] >= thr_eff]
-                        candidates.sort(key=lambda x: x[1]["score"], reverse=True)
-                        if candidates:
-                            bp, bs = candidates[0]
-                            self._log(f"Adaptive entry: {bs['direction']} "
-                                      f"{pair_label(bp)} score {bs['score']}/9", CYAN)
-                            self._last_signal_pair = bp
-                            self._last_signal_time = time.time()
-                            self._last_signal_dir  = bs["direction"]
-                    eff_now = self._adaptive_thr if self._adaptive_thr else thr
-                    self._log(f"All pairs HOLD — no signal above threshold {eff_now}/9" + (" (adaptive)" if self._adaptive_thr else ""), DIM)
-                    if ck and (time.time() - self._last_claude_call) > 60:
+                    self._log(f"All pairs HOLD — no signal above threshold {thr}/9", DIM)
+                    if ck and (time.time() - self._last_claude_call) > 60 and top_pair:
                         def _bg_claude(s=top_sig, c=ck, st=self.state,
                                        sy=top_pair, lv=lev, mg_=mg):
                             reason = claude_reasoning(s, st, sy, lv, mg_, c)
                             if reason:
                                 self._log(f"AI (all HOLD): {reason}", PURPLE)
-                                self._update_claude_panel(s, reasoning=reason)
                             self._last_claude_call = time.time()
                         threading.Thread(target=_bg_claude, daemon=True).start()
 
@@ -4177,10 +3991,8 @@ class HermesBotApp:
             pass  # ATR check is advisory only; never block a trade over it
 
         # ── Minimum TP enforcement: TP must cover round-trip fee + small profit ──
-        # Fee = 0.2% of position notional = 0.2% price move
-        # Minimum TP = fee + 0.1% extra = 0.3% price move minimum
-        FEE_PCT = 0.002   # 0.2% round-trip taker fee as a price-move fraction
-        MIN_TP  = FEE_PCT + 0.001   # fee + 0.1% minimum profit above fees
+        FEE_PCT = self._fee_taker * 2   # round-trip taker fee as a price-move fraction
+        MIN_TP  = FEE_PCT + 0.001       # fee + 0.1% minimum profit above fees
         if tp_pct < MIN_TP:
             old_tp = tp_pct
             tp_pct = MIN_TP
@@ -4214,8 +4026,9 @@ class HermesBotApp:
             self._log(f"Sending order: {sym} {direction} vol={vol} side={side} "
                       f"type=5 openType=1 px={px:.4f}", DIM)
 
-            # ── Try limit order first (0.03% better price = maker fee = 0%) ──────
-            LIMIT_OFFSET = 0.0003
+            # ── Try limit order first (dynamic ATR-based offset) ─────────────
+            atr_p = self.pair_signals.get(sym, {}).get("atr_pct", 0.03)
+            LIMIT_OFFSET = max(0.0001, min(0.0005, atr_p / 100 * 0.5))
             limit_px = round(px * (1 - LIMIT_OFFSET) if direction == "LONG"
                              else px * (1 + LIMIT_OFFSET), 6)
             try:
@@ -4228,10 +4041,10 @@ class HermesBotApp:
                 limit_oid = None
 
             if limit_oid:
-                self._log(f"Limit order placed @ ${limit_px:,.6g} — waiting up to 60s", CYAN)
+                self._log(f"Limit order placed @ ${limit_px:,.6g} — waiting up to 20s", CYAN)
                 filled = False
-                for _ in range(6):
-                    time.sleep(10)
+                for _ in range(4):
+                    time.sleep(5)
                     try:
                         chk = mexc_private("GET", "/api/v1/private/order/get_order_context",
                                            {"symbol": sym, "orderId": limit_oid}, ak, asc, dry)
@@ -4388,8 +4201,8 @@ class HermesBotApp:
             raw = (px - pos.entry_price) / pos.entry_price if d == "LONG" \
                   else (pos.entry_price - px) / pos.entry_price
             gross_pnl = raw * pos.leverage * pos.margin
-            # Deduct round-trip fees: 0.1% taker open + 0.1% taker close = 0.2% of position size
-            fee = pos.size_usdt * 0.002   # 0.2% of notional position
+            # Deduct round-trip fees: taker open + taker close
+            fee = pos.size_usdt * (self._fee_taker * 2)
             pnl = round(gross_pnl - fee, 4); ep = px
             status = "WIN" if pnl >= 0 else "LOSS"
             if pnl >= 0: self.state.wins   += 1
@@ -4418,6 +4231,9 @@ class HermesBotApp:
             "pnl_usdt": pnl, "status": status, "hedge": bool(pos.hedge_of),
             "opened_at": pos.opened_at,
             "closed_at": datetime.now(timezone.utc).isoformat()})
+
+        # ── Adaptive engine: log trade outcome ───────────────────────────────
+        self._adaptive_engine.log_trade(pnl >= 0)
 
         # ── Pair cooldown + losing streak tracking ───────────────────────────
         if pnl < 0:
