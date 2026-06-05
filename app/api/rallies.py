@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import datetime as dt
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from ..auth import require_ready
 from ..db import get_conn
 
 router = APIRouter(prefix="/api/rallies", tags=["rallies"])
@@ -74,7 +75,7 @@ def rally_leaderboard(frm: str | None = None, to: str | None = None, limit: int 
 
 
 @router.post("")
-def create_rally(body: RallyIn):
+def create_rally(body: RallyIn, user=Depends(require_ready)):
     data = body.model_dump()
     data["captured_at"] = data["captured_at"] or dt.date.today().isoformat()
     conn = get_conn()

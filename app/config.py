@@ -72,7 +72,12 @@ class Config:
 
     # Comma-separated origins allowed to call the API from a browser (CORS).
     # e.g. "https://kd1685.github.io". Empty = same-origin only.
-    CORS_ORIGINS: list[str] = [o.strip() for o in _get("CORS_ORIGINS", "").split(",") if o.strip()]
+    # Wildcard "*" is rejected because allow_credentials=True is incompatible
+    # with it and would leak session cookies to any origin.
+    CORS_ORIGINS: list[str] = [
+        o.strip() for o in _get("CORS_ORIGINS", "").split(",")
+        if o.strip() and o.strip() != "*"
+    ]
 
     CAPTURE_DIR: Path = (ROOT / "captures").resolve()
 
@@ -84,3 +89,12 @@ class Config:
 config = Config()
 config.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 config.CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
+
+if config.admin_password_is_default and config.CONTROL_BACKEND != "mock":
+    import warnings
+    warnings.warn(
+        "SECURITY: ADMIN_PASSWORD is the default 'changeme1685'. "
+        "Set a strong password via the ADMIN_PASSWORD environment variable "
+        "before exposing this instance to the network.",
+        stacklevel=1,
+    )

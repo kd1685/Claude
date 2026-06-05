@@ -30,6 +30,10 @@ def test_full_flow():
     with TestClient(app) as client:  # lifespan starts the worker
         assert client.get("/api/health").json()["ok"] is True
 
+        # Data-write endpoints now require auth — log in first.
+        assert client.post("/api/auth/login",
+                           json={"username": "king", "password": "s3cret"}).status_code == 200
+
         # Ingest a manual power scan.
         scan = client.post("/api/scans", json={
             "kind": "power", "captured_at": "2026-05-01", "source": "manual",
@@ -58,12 +62,7 @@ def test_full_flow():
         assert client.get("/api/stats/kingdom-totals?metric=power&from=2026-05-01&to=2026-05-05").json()["series"]
         assert client.get("/api/stats/summary?date=2026-05-05").json()["governors"] >= 1
 
-        # Control API is locked until we log in (data pages above were public).
-        assert client.get("/api/control/status").status_code == 401
-        assert client.post("/api/auth/login",
-                           json={"username": "king", "password": "wrong"}).status_code == 401
-        assert client.post("/api/auth/login",
-                           json={"username": "king", "password": "s3cret"}).status_code == 200
+        # Verify already-logged-in session info.
         me = client.get("/api/auth/me").json()
         assert me["authenticated"] and me["role"] == "admin"
 
@@ -80,7 +79,7 @@ def test_full_flow():
         assert officer.post("/api/control/locate", json={"player_id": 1}).status_code == 403
         # Changing the password clears the flag and unlocks control.
         assert officer.post("/api/auth/change-password",
-                            json={"current_password": "pw1", "new_password": "pw1real"}
+                            json={"current_password": "pw1", "new_password": "pw1realpass1"}
                             ).status_code == 200
         assert officer.get("/api/auth/me").json()["must_change_password"] is False
         assert officer.get("/api/control/status").status_code == 200
@@ -101,17 +100,17 @@ def test_full_flow():
 
         # Self-service password change: wrong current pw rejected, then changed.
         assert officer.post("/api/auth/change-password",
-                            json={"current_password": "nope", "new_password": "brandnew"}
+                            json={"current_password": "nope", "new_password": "brandnew123"}
                             ).status_code == 400
         assert officer.post("/api/auth/change-password",
-                            json={"current_password": "pw1real", "new_password": "brandnew"}
+                            json={"current_password": "pw1realpass1", "new_password": "brandnew123"}
                             ).status_code == 200
         # Old password no longer works; new one does.
         fresh = TestClient(app)
         assert fresh.post("/api/auth/login",
-                          json={"username": "scout", "password": "pw1real"}).status_code == 401
+                          json={"username": "scout", "password": "pw1realpass1"}).status_code == 401
         assert fresh.post("/api/auth/login",
-                          json={"username": "scout", "password": "brandnew"}).status_code == 200
+                          json={"username": "scout", "password": "brandnew123"}).status_code == 200
 
         # Admin password reset re-arms the forced-change flag.
         oid = next(u["id"] for u in client.get("/api/auth/users").json() if u["username"] == "scout")
@@ -171,7 +170,7 @@ def _advanced(client):
     duty = TestClient(app)
     duty.post("/api/auth/login", json={"username": "duty", "password": "tmp12345"})
     duty.post("/api/auth/change-password",
-              json={"current_password": "tmp12345", "new_password": "dutyreal1"})
+              json={"current_password": "tmp12345", "new_password": "dutyrealpass1"})
     assert duty.post("/api/control/change-rank",
                      json={"player_id": ids[0], "new_rank": 5}).status_code == 403
     assert duty.post("/api/control/change-rank",

@@ -1,8 +1,9 @@
 """Manual scan ingest + scan history."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from ..auth import require_ready
 from ..db import get_conn
 from ..models import ScanIn
 from ..services import VALID_KINDS, ingest_scan
@@ -11,7 +12,7 @@ router = APIRouter(prefix="/api/scans", tags=["scans"])
 
 
 @router.post("")
-def create_scan(body: ScanIn):
+def create_scan(body: ScanIn, user=Depends(require_ready)):
     if body.kind not in VALID_KINDS:
         raise HTTPException(400, f"kind must be one of {sorted(VALID_KINDS)}")
     rows = [r.model_dump(exclude_none=True) for r in body.rows]
