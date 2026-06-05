@@ -13,12 +13,15 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import time
 
 from fastapi import HTTPException, Request
 
 from . import users
 from .config import config
+
+_log = logging.getLogger(__name__)
 
 COOKIE = "rok_session"
 
@@ -53,6 +56,7 @@ def verify_token(token: str) -> dict | None:
             return None
         return body
     except Exception:
+        _log.debug("token verification failed", exc_info=True)
         return None
 
 

@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import os
 import sqlite3
 
 from .config import config
 from .db import get_conn
+
+_log = logging.getLogger(__name__)
 
 _ITERATIONS = 200_000
 
@@ -25,6 +28,7 @@ def verify_password(password: str, stored: str) -> bool:
                                  bytes.fromhex(salt_hex), int(iters))
         return hmac.compare_digest(dk.hex(), hash_hex)
     except Exception:
+        _log.warning("password verification failed (possibly corrupt hash)", exc_info=True)
         return False
 
 

@@ -7,8 +7,12 @@ scan.
 """
 from __future__ import annotations
 
+import logging
+
 from . import ocr
 from .adapter import ActionResult
+
+_log = logging.getLogger(__name__)
 
 # Which snapshot column a rankings tab maps onto.
 KIND_FIELD = {"power": "power", "killpoints": "kill_points", "dead": "deads"}
@@ -19,6 +23,7 @@ def _stop(adapter) -> bool:
     try:
         return bool(cb and cb())
     except Exception:
+        _log.warning("should_stop callback raised; treating as not-stopped", exc_info=True)
         return False
 
 
@@ -71,6 +76,7 @@ def scan_rankings_via_adb(adapter, *, kind: str, pages: int) -> ActionResult:
     try:
         adapter.run_macro("close_rankings", {})
     except Exception:
+        _log.warning("close_rankings macro failed, falling back to Back key", exc_info=True)
         driver.keyevent(4)
     return ActionResult(True, f"scanned {len(rows)} rows ({kind})", {"rows": rows})
 
@@ -117,6 +123,7 @@ def scan_rallies_via_adb(adapter, *, pages: int) -> ActionResult:
     try:
         adapter.run_macro("close_rankings", {})
     except Exception:
+        _log.warning("close_rankings macro failed after rally scan, falling back to Back key", exc_info=True)
         driver.keyevent(4)
     rows = list(seen.values())
     return ActionResult(True, f"read {len(rows)} rallies", {"rows": rows})
@@ -208,7 +215,8 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
                 adapter.run_macro("open_more_info", {})
                 time.sleep(1.0)
             except Exception:
-                pass
+                _log.warning("open_more_info macro failed for rank=%s name=%r; skipping profile",
+                             rk, listname, exc_info=True)
             mpng = driver.screencap()
             row = dict(ocr.read_labeled_values(mpng, labels))
             if name_region:
@@ -238,6 +246,7 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
     try:
         adapter.run_macro("close_rankings", {})
     except Exception:
+        _log.warning("close_rankings macro failed after profile scan, falling back to Back key", exc_info=True)
         driver.keyevent(4)
     rows = list(seen.values())
     return ActionResult(True, f"deep-scanned {len(rows)} governors", {"rows": rows})
@@ -264,7 +273,7 @@ def find_on_map_via_adb(adapter, *, name: str, passes: int | None = None) -> Act
         try:
             adapter.run_macro("recenter", {})
         except Exception:
-            pass
+            _log.warning("recenter macro failed before map scan", exc_info=True)
 
     for _ in range(passes):
         if _stop(adapter):
