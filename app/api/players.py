@@ -5,7 +5,7 @@ import datetime as dt
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..auth import require_admin
+from ..auth import require_admin, require_ready
 from ..db import get_conn, upsert_player
 from ..models import PlayerIn
 
@@ -62,7 +62,7 @@ def get_player(player_id: int):
 
 
 @router.post("")
-def create_player(body: PlayerIn):
+def create_player(body: PlayerIn, user=Depends(require_ready)):
     pid = upsert_player(body.name, body.governor_id, body.alliance, body.rank)
     get_conn().commit()
     return {"id": pid}

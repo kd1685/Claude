@@ -36,20 +36,19 @@ if config.CORS_ORIGINS:
         CORSMiddleware,
         allow_origins=config.CORS_ORIGINS,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Cookie"],
     )
 
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "kingdom": config.KINGDOM_ID,
-            "control_backend": config.CONTROL_BACKEND}
+    return {"ok": True, "kingdom": config.KINGDOM_ID}
 
 
 @app.get("/api/config")
 def public_config():
-    return {"kingdom": config.KINGDOM_ID, "control_backend": config.CONTROL_BACKEND}
+    return {"kingdom": config.KINGDOM_ID}
 
 
 for r in (auth.router, stats.router, players.router, scans.router,
