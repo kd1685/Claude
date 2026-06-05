@@ -1,16 +1,12 @@
 """Shared business logic used by both the HTTP API and the control worker."""
 from __future__ import annotations
 
-import datetime as dt
 import json
 
 from .db import get_conn, upsert_player, upsert_snapshot
+from .utils import today
 
 VALID_KINDS = {"power", "killpoints", "dead", "rss"}
-
-
-def today() -> str:
-    return dt.date.today().isoformat()
 
 
 def ingest_scan(kind: str, rows: list[dict], *, captured_at: str | None = None,

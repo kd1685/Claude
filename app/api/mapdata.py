@@ -1,11 +1,10 @@
 """Map positions for the kingdom map view."""
 from __future__ import annotations
 
-import datetime as dt
-
 from fastapi import APIRouter
 
 from ..db import get_conn
+from ..utils import rows_to_dicts, today
 
 router = APIRouter(prefix="/api/map", tags=["map"])
 
@@ -13,7 +12,7 @@ router = APIRouter(prefix="/api/map", tags=["map"])
 @router.get("/positions")
 def positions(date: str | None = None):
     """Latest known position per player as of `date`."""
-    date = date or dt.date.today().isoformat()
+    date = date or today()
     rows = get_conn().execute(
         """
         SELECT m.player_id, m.name, m.kingdom, m.x, m.y, m.captured_at, p.alliance
@@ -27,4 +26,4 @@ def positions(date: str | None = None):
         """,
         (date,),
     ).fetchall()
-    return {"date": date, "positions": [dict(r) for r in rows]}
+    return {"date": date, "positions": rows_to_dicts(rows)}

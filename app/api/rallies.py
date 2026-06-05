@@ -1,12 +1,11 @@
 """Rally log endpoints."""
 from __future__ import annotations
 
-import datetime as dt
-
 from fastapi import APIRouter
 from pydantic import BaseModel
 
 from ..db import get_conn
+from ..utils import add_positions, date_range, rows_to_dicts, today
 
 router = APIRouter(prefix="/api/rallies", tags=["rallies"])
 
@@ -26,8 +25,7 @@ class RallyIn(BaseModel):
 
 @router.get("")
 def list_rallies(frm: str | None = None, to: str | None = None, limit: int = 500):
-    to = to or dt.date.today().isoformat()
-    frm = frm or (dt.date.fromisoformat(to) - dt.timedelta(days=30)).isoformat()
+    frm, to = date_range(frm, to, default_days=30)
     conn = get_conn()
     rows = conn.execute(
         "SELECT * FROM rallies WHERE captured_at BETWEEN ? AND ? "
@@ -43,15 +41,14 @@ def list_rallies(frm: str | None = None, to: str | None = None, limit: int = 500
            GROUP BY captured_at ORDER BY captured_at""",
         (frm, to),
     ).fetchall()
-    return {"from": frm, "to": to, "rows": [dict(r) for r in rows],
-            "by_day": [dict(r) for r in agg]}
+    return {"from": frm, "to": to, "rows": rows_to_dicts(rows),
+            "by_day": rows_to_dicts(agg)}
 
 
 @router.get("/leaderboard")
 def rally_leaderboard(frm: str | None = None, to: str | None = None, limit: int = 100):
     """Rank alliance members by rallies led over a date range."""
-    to = to or dt.date.today().isoformat()
-    frm = frm or (dt.date.fromisoformat(to) - dt.timedelta(days=30)).isoformat()
+    frm, to = date_range(frm, to, default_days=30)
     rows = get_conn().execute(
         """SELECT leader_name,
                   COUNT(*) AS rallies,
@@ -65,18 +62,18 @@ def rally_leaderboard(frm: str | None = None, to: str | None = None, limit: int 
         (frm, to, limit),
     ).fetchall()
     out = []
-    for i, r in enumerate(rows, 1):
+    for r in rows:
         d = dict(r)
-        d["position"] = i
         d["win_rate"] = round(100 * (d["wins"] or 0) / d["rallies"]) if d["rallies"] else 0
         out.append(d)
+    add_positions(out)
     return {"from": frm, "to": to, "rows": out}
 
 
 @router.post("")
 def create_rally(body: RallyIn):
     data = body.model_dump()
-    data["captured_at"] = data["captured_at"] or dt.date.today().isoformat()
+    data["captured_at"] = data["captured_at"] or today()
     conn = get_conn()
     cur = conn.execute(
         """INSERT INTO rallies

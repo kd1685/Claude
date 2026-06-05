@@ -1,11 +1,10 @@
 """Date-filtered statistics endpoints (leaderboards, gains, kingdom totals)."""
 from __future__ import annotations
 
-import datetime as dt
-
 from fastapi import APIRouter, HTTPException, Query
 
 from ..db import get_conn
+from ..utils import add_positions, date_range, rows_to_dicts, today
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
@@ -58,7 +57,7 @@ def leaderboard(
     """Ranked players for `metric` as of `date`. If `from` is given, also
     returns the gain (delta) accumulated between `from` and `date`."""
     col = _col(metric)
-    date = date or dt.date.today().isoformat()
+    date = date or today()
     conn = get_conn()
     rows = conn.execute(
         f"""
@@ -88,8 +87,7 @@ def leaderboard(
         out.append(item)
     if frm:
         out.sort(key=lambda d: (d["gain"] is None, -(d["gain"] or 0)))
-        for i, item in enumerate(out, 1):
-            item["position"] = i
+        add_positions(out)
     return {"metric": col, "date": date, "from": frm, "count": len(out), "rows": out}
 
 
@@ -101,8 +99,7 @@ def kingdom_totals(
 ):
     """Per-day kingdom-wide totals for charting a metric over a date range."""
     col = _col(metric)
-    to = to or dt.date.today().isoformat()
-    frm = frm or (dt.date.fromisoformat(to) - dt.timedelta(days=30)).isoformat()
+    frm, to = date_range(frm, to, default_days=30)
     rows = get_conn().execute(
         f"""SELECT captured_at, SUM({col}) AS total, COUNT({col}) AS players
             FROM snapshots
@@ -111,7 +108,7 @@ def kingdom_totals(
         (frm, to),
     ).fetchall()
     return {"metric": col, "from": frm, "to": to,
-            "series": [dict(r) for r in rows]}
+            "series": rows_to_dicts(rows)}
 
 
 @router.get("/dkp")
@@ -125,8 +122,7 @@ def dkp(
 ):
     """KvK-style DKP leaderboard: points from T4/T5 kills + deads *gained*
     between two dates, each weighted. Defaults: T4×1, T5×2, deads×5."""
-    to = to or dt.date.today().isoformat()
-    frm = frm or (dt.date.fromisoformat(to) - dt.timedelta(days=14)).isoformat()
+    frm, to = date_range(frm, to, default_days=14)
     conn = get_conn()
     players = conn.execute("SELECT id, name, alliance FROM players").fetchall()
     out = []
@@ -144,8 +140,7 @@ def dkp(
                     "t5_gain": parts["t5_kills"], "dead_gain": parts["deads"]})
     out.sort(key=lambda d: d["dkp"], reverse=True)
     out = out[:limit]
-    for i, item in enumerate(out, 1):
-        item["position"] = i
+    add_positions(out)
     return {"from": frm, "to": to,
             "weights": {"t4": w_t4, "t5": w_t5, "dead": w_dead}, "rows": out}
 
@@ -159,8 +154,7 @@ def alerts(
 ):
     """Governors whose power dropped (possible quit/migration) or whose deads
     spiked, between two dates."""
-    to = to or dt.date.today().isoformat()
-    frm = frm or (dt.date.fromisoformat(to) - dt.timedelta(days=7)).isoformat()
+    frm, to = date_range(frm, to, default_days=7)
     conn = get_conn()
     drops, spikes = [], []
     for p in conn.execute("SELECT id, name, alliance FROM players").fetchall():
@@ -180,7 +174,7 @@ def alerts(
 @router.get("/summary")
 def summary(date: str | None = None):
     """Headline numbers for the dashboard at a given date."""
-    date = date or dt.date.today().isoformat()
+    date = date or today()
     conn = get_conn()
 
     def total(col: str):

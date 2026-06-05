@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from ..db import get_conn
 from ..models import ScanIn
 from ..services import VALID_KINDS, ingest_scan
+from ..utils import rows_to_dicts
 
 router = APIRouter(prefix="/api/scans", tags=["scans"])
 
@@ -26,4 +27,4 @@ def list_scans(limit: int = 50):
         "FROM scans ORDER BY id DESC LIMIT ?",
         (limit,),
     ).fetchall()
-    return [dict(r) for r in rows]
+    return rows_to_dicts(rows)
