@@ -166,14 +166,17 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
     """Deep scan the top `count` governors, top-to-bottom, reading the DEAD-troop
     stat block from each one's More Info screen.
 
-    Robust traversal: we DON'T rely on reading the little rank numbers (the medal
-    circles for 1-3 barely OCR). Instead we de-duplicate each visible row by its
-    POWER VALUE — big clean white digits that OCR reliably — and always scroll
-    with overlap. That makes skips and double-scans structurally impossible: even
-    if a scroll overshoots or the list snaps back, a row we've already done is
-    recognised by its value and skipped. Names are read from the large, clean
-    rankings-list font (far more accurate than the small More Info name). The
-    controlling account's own row is skipped.
+    Traversal is driven by ROW POSITION, not by reading the changing numbers:
+    each screen we open every visible row in turn (box 1, 2, 3, ... top to
+    bottom), and de-duplicate by the GOVERNOR ID read on each profile screen
+    (the one identifier that OCRs reliably). Then we scroll down with overlap and
+    repeat. Because we always step through every box and dedup by a stable ID:
+      * nothing is skipped (every box is opened; overlap re-shows boundary rows),
+      * nothing is double-counted (a governor whose ID we've seen is closed
+        immediately), and
+      * we can't get stuck on one row (we never re-pick the same box in a loop).
+    Names come from the large, clean rankings-list font; the controlling
+    account's own row is skipped.
     """
     if not ocr.available():
         return ActionResult(False, "OCR not available (install requirements-adb.txt + tesseract)")
@@ -195,85 +198,81 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
     title_region = cfg.get("title_region", [360, 40, 560, 55])
     scroll = cfg.get("scroll", [640, 540, 640, 250, 1100])
 
-    def read_rows(png):
-        """[(key, rowcfg, value), ...] for visible rows, top to bottom. `key`
-        de-dups a row across overlapping scrolls: the power value when readable
-        (most reliable), else the normalised name."""
-        out = []
-        for rc in rows_cfg:
-            val = ocr.read_int_region(png, rc["value"]) if rc.get("value") else None
-            key = str(val) if val is not None else ""
-            if not key and rc.get("name"):
-                nm = ocr.ocr_region(png, rc["name"]).strip().splitlines()
-                key = ocr._norm(nm[0]) if nm else ""
-            if key:
-                out.append((key, rc, val))
-        return out
-
     seen: dict[str, dict] = {}
-    scanned: set[str] = set()      # row keys already handled
+    seen_keys: set[str] = set()    # governor IDs + names already handled
     guard = 0
-    stagnant = 0
-    while len(seen) < count and guard < count * 6 + 80:
+    no_new = 0
+    while len(seen) < count and guard < count * 8 + 100:
         guard += 1
         if _stop(adapter):
             break
         png = driver.screencap()
-        rows = read_rows(png)
+        progressed = False
 
-        # Topmost visible row we haven't handled yet.
-        target = next((t for t in rows if t[0] not in scanned), None)
-        if target is None:
-            # Everything on screen is already scanned — scroll for more.
-            driver.swipe(*[int(v) for v in scroll[:4]],
-                         ms=int(scroll[4]) if len(scroll) > 4 else 1100)
-            time.sleep(1.0)
-            after = read_rows(driver.screencap())
-            if after and all(k in scanned for k, _, _ in after):
-                stagnant += 1
-                if stagnant >= 3:        # list isn't advancing -> bottom reached
-                    break
-            else:
-                stagnant = 0
-            continue
+        for rc in rows_cfg:                       # open every visible box, in order
+            if len(seen) >= count or _stop(adapter):
+                break
+            listname = ocr.read_name_region(png, rc["name"]) if rc.get("name") else ""
+            alliance, listname = _split_alliance(listname)
+            nkey = ocr._norm(listname)
+            if not nkey:
+                continue                          # blank row position (past list end)
+            if nkey in seen_keys:
+                continue                          # overlap row we already did — skip cheaply
+            if own and own in nkey:
+                seen_keys.add(nkey)
+                continue                          # our own account
 
-        stagnant = 0
-        key, rc, val = target
-        scanned.add(key)
+            val = ocr.read_int_region(png, rc["value"]) if rc.get("value") else None
+            driver.tap(int(rc["tap"][0]), int(rc["tap"][1]))
+            time.sleep(1.4)
+            # Profile screen: Governor ID + clean labelled Power / Kill Points.
+            ppng = driver.screencap()
+            gid = ocr.read_int_region(ppng, id_region) if id_region else None
+            gkey = str(gid) if gid else ""
+            if gkey and gkey in seen_keys:        # already scanned (caught by ID)
+                seen_keys.add(nkey)
+                _close_profile_to_list(adapter, driver, title_region)
+                png = driver.screencap()
+                continue
 
-        listname = ocr.read_name_region(png, rc["name"]) if rc.get("name") else ""
-        alliance, listname = _split_alliance(listname)
-        if own and listname and own in ocr._norm(listname):
-            continue                      # skip our own account
+            row = dict(ocr.read_labeled_values(ppng, labels))
+            try:
+                adapter.run_macro("open_more_info", {})
+                time.sleep(1.0)
+            except Exception:
+                pass
+            mpng = driver.screencap()
+            row.update(ocr.read_labeled_values(mpng, labels))   # adds deads etc.
+            if gkey:
+                row["governor_id"] = gkey
+            row["name"] = listname or (ocr.read_name_region(mpng, name_region)
+                                       if name_region else "")
+            if alliance:
+                row["alliance"] = alliance
+            if val is not None and not row.get("power"):
+                row["power"] = val
 
-        driver.tap(int(rc["tap"][0]), int(rc["tap"][1]))
-        time.sleep(1.4)
-        # The profile screen (before More Info) has the Governor ID plus clean,
-        # labelled Power / Kill Points. Read those here, then let More Info add
-        # the dead troops + resource stats (merged on top).
-        ppng = driver.screencap()
-        row = dict(ocr.read_labeled_values(ppng, labels))
-        if id_region:
-            gid = ocr.read_int_region(ppng, id_region)
-            if gid:
-                row["governor_id"] = str(gid)
-        try:
-            adapter.run_macro("open_more_info", {})
-            time.sleep(1.0)
-        except Exception:
-            pass
-        mpng = driver.screencap()
-        row.update(ocr.read_labeled_values(mpng, labels))
-        # Prefer the large, clean rankings-list name; fall back to More Info.
-        row["name"] = listname or (ocr.read_name_region(mpng, name_region) if name_region else "")
-        if alliance:
-            row["alliance"] = alliance
-        if val is not None and not row.get("power"):
-            row["power"] = val
-        if (row.get("name") or row.get("governor_id")) and len(row) > 1:
-            dkey = row.get("governor_id") or row["name"]
-            seen[dkey] = row
-        _close_profile_to_list(adapter, driver, title_region)
+            if (row.get("name") or gkey) and len(row) > 1:
+                dkey = gkey or row["name"]
+                seen[dkey] = row
+                seen_keys.update(k for k in (gkey, nkey, ocr._norm(row["name"])) if k)
+                progressed = True
+            _close_profile_to_list(adapter, driver, title_region)
+            png = driver.screencap()              # refresh after returning to the list
+
+        if len(seen) >= count or _stop(adapter):
+            break
+        # Scroll down (with overlap) to bring the next set of governors into view.
+        driver.swipe(*[int(v) for v in scroll[:4]],
+                     ms=int(scroll[4]) if len(scroll) > 4 else 1100)
+        time.sleep(1.0)
+        if progressed:
+            no_new = 0
+        else:
+            no_new += 1
+            if no_new >= 2:                        # nothing new across scrolls -> bottom
+                break
 
     try:
         adapter.run_macro("close_rankings", {})
