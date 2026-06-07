@@ -103,20 +103,21 @@
 
   "profiles": {
     "_comment": [
-      "Deep scan by player count. Each row has: rank (number left of the avatar),",
-      "name (for skipping your own account), tap (where to tap to open the",
-      "profile). Reading the rank prevents skipping/double-scanning. 'scroll' is",
-      "intentionally gentle/slow to avoid fling overshoot. Stats read by LABEL."
+      "Deep scan, top-to-bottom. Each row has: name, value (POWER — big clean",
+      "digits, used to de-dup a row across overlapping scrolls so we never skip",
+      "or double-scan), tap (where to open the profile), and rank (kept for",
+      "reference only). 'scroll' is slow to avoid fling overshoot. Stats read by",
+      "LABEL on the More Info screen. Calibrated from a clean 1280x720 frame."
     ],
     "rows": [
-      {"rank": [150, 208, 64, 40], "name": [285, 206, 440, 34], "tap": [400, 228]},
-      {"rank": [150, 289, 64, 40], "name": [285, 287, 440, 34], "tap": [400, 309]},
-      {"rank": [150, 370, 64, 40], "name": [285, 367, 440, 34], "tap": [400, 390]},
-      {"rank": [150, 450, 64, 40], "name": [285, 448, 440, 34], "tap": [400, 470]},
-      {"rank": [150, 531, 64, 40], "name": [285, 528, 440, 34], "tap": [400, 551]},
-      {"rank": [150, 611, 64, 40], "name": [285, 609, 440, 34], "tap": [400, 631]}
+      {"rank": [148, 208, 72, 44], "name": [285, 212, 380, 36], "value": [840, 212, 230, 36], "tap": [500, 230]},
+      {"rank": [148, 286, 72, 44], "name": [285, 290, 380, 36], "value": [840, 290, 230, 36], "tap": [500, 308]},
+      {"rank": [148, 365, 72, 44], "name": [285, 369, 380, 36], "value": [840, 369, 230, 36], "tap": [500, 387]},
+      {"rank": [148, 443, 72, 44], "name": [285, 447, 380, 36], "value": [840, 447, 230, 36], "tap": [500, 465]},
+      {"rank": [148, 521, 72, 44], "name": [285, 525, 380, 36], "value": [840, 525, 230, 36], "tap": [500, 543]},
+      {"rank": [148, 600, 72, 44], "name": [285, 604, 380, 36], "value": [840, 604, 230, 36], "tap": [500, 622]}
     ],
-    "scroll": [640, 560, 640, 260, 1100],
+    "scroll": [640, 540, 640, 250, 1100],
     "name_region": [285, 105, 300, 40],
     "id_region": null,
     "_id_region_help": "Governor ID box on the PROFILE screen (the numeric ID with the copy icon under the name, before More Info). Set [x,y,w,h] once calibrated from a clean profile screenshot; until then it is skipped.",

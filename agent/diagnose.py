@@ -52,15 +52,12 @@ def main() -> int:
     cfg = a.profile.data.get("profiles", {})
     rows = cfg.get("rows", [])
     print(f"OWN_GOVERNOR={config.OWN_GOVERNOR!r}   rows={len(rows)}")
-    print("Reading each row's rank box + name (should be 1,2,3,... top to bottom):")
+    print("Reading each row's value (POWER, used to de-dup) + name + rank:")
     for i, r in enumerate(rows):
+        val = ocr.read_int_region(png, r["value"]) if r.get("value") else None
         rk = ocr.read_int_region(png, r["rank"]) if r.get("rank") else None
         nm = ocr.read_name_region(png, r["name"]) if r.get("name") else ""
-        raw = ""
-        if r.get("name"):
-            rl = ocr.ocr_region(png, r["name"]).strip().splitlines()
-            raw = rl[0].strip() if rl else ""
-        print(f"  row {i}: rank={rk!s:<5} name={nm!r}  (raw={raw!r}, rank box {r.get('rank')})")
+        print(f"  row {i}: value={val!s:<12} name={nm!r:<28} rank={rk!s}")
     idr = cfg.get("id_region")
     print(f"\nid_region={idr}  (Governor ID box on the profile screen)")
     if idr:

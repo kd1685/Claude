@@ -10,6 +10,21 @@ from __future__ import annotations
 from . import ocr
 from .adapter import ActionResult
 
+import re
+
+# Leading alliance tag like "[WW85] Name" or "(WW85) Name".
+_TAG_RE = re.compile(r"^\s*[\[\(]\s*([A-Za-z0-9]{2,4})\s*[\]\)]\s*(.+)$")
+
+
+def _split_alliance(raw: str):
+    """Split a rankings name into (alliance_tag, name). RoK shows '[WW85] Name';
+    returns (None, name) when there's no recognisable tag."""
+    m = _TAG_RE.match(raw or "")
+    if m:
+        return m.group(1), m.group(2).strip()
+    return None, (raw or "").strip()
+
+
 # Which snapshot column a rankings tab maps onto.
 KIND_FIELD = {"power": "power", "killpoints": "kill_points", "dead": "deads"}
 
@@ -148,13 +163,17 @@ def _close_profile_to_list(adapter, driver, title_region):
 
 
 def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
-    """Deep scan governors ranked 1..count, deterministically BY RANK NUMBER.
+    """Deep scan the top `count` governors, top-to-bottom, reading the DEAD-troop
+    stat block from each one's More Info screen.
 
-    Each step hunts for the *exact next rank* on screen; if it isn't visible it
-    scrolls toward it (up if we overshot, down otherwise). This guarantees every
-    rank 1..count is scanned once — no skips, no duplicates — regardless of how
-    far a scroll flings. Opens each profile -> More Info and reads the stat block
-    (incl. DEAD troops) by label. Skips the controlling account's own row.
+    Robust traversal: we DON'T rely on reading the little rank numbers (the medal
+    circles for 1-3 barely OCR). Instead we de-duplicate each visible row by its
+    POWER VALUE — big clean white digits that OCR reliably — and always scroll
+    with overlap. That makes skips and double-scans structurally impossible: even
+    if a scroll overshoots or the list snaps back, a row we've already done is
+    recognised by its value and skipped. Names are read from the large, clean
+    rankings-list font (far more accurate than the small More Info name). The
+    controlling account's own row is skipped.
     """
     if not ocr.available():
         return ActionResult(False, "OCR not available (install requirements-adb.txt + tesseract)")
@@ -174,77 +193,84 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
     name_region = cfg.get("name_region")
     id_region = cfg.get("id_region")          # Governor ID on the profile screen
     title_region = cfg.get("title_region", [360, 40, 560, 55])
-    scroll = cfg.get("scroll", [640, 580, 640, 300, 1100])
-    scroll_up = [scroll[0], scroll[3], scroll[2], scroll[1]] + list(scroll[4:])
+    scroll = cfg.get("scroll", [640, 540, 640, 250, 1100])
 
-    def read_ranks(png):
-        return [ocr.read_int_region(png, r["rank"]) if r.get("rank") else None
-                for r in rows_cfg]
+    def read_rows(png):
+        """[(key, rowcfg, value), ...] for visible rows, top to bottom. `key`
+        de-dups a row across overlapping scrolls: the power value when readable
+        (most reliable), else the normalised name."""
+        out = []
+        for rc in rows_cfg:
+            val = ocr.read_int_region(png, rc["value"]) if rc.get("value") else None
+            key = str(val) if val is not None else ""
+            if not key and rc.get("name"):
+                nm = ocr.ocr_region(png, rc["name"]).strip().splitlines()
+                key = ocr._norm(nm[0]) if nm else ""
+            if key:
+                out.append((key, rc, val))
+        return out
 
     seen: dict[str, dict] = {}
-    next_rank = 1
-    scrolled = False
+    scanned: set[str] = set()      # row keys already handled
     guard = 0
-    while next_rank <= count and guard < count * 6 + 50:
+    stagnant = 0
+    while len(seen) < count and guard < count * 6 + 80:
         guard += 1
         if _stop(adapter):
             break
         png = driver.screencap()
-        ranks = read_ranks(png)
-        rank_row = {}
-        for idx, rk in enumerate(ranks):
-            if rk and 1 <= rk <= count + 8:
-                rank_row.setdefault(rk, rows_cfg[idx])
-        # At the very top (before any scroll) the medal ranks 1-3 may not OCR, so
-        # fall back to row position: row 0 = rank 1, row 1 = rank 2, ...
-        if not scrolled:
-            for idx in range(len(rows_cfg)):
-                rank_row.setdefault(idx + 1, rows_cfg[idx])
+        rows = read_rows(png)
 
-        if next_rank in rank_row:
-            r = rank_row[next_rank]
-            listname = ocr.read_name_region(png, r["name"]) if r.get("name") else ""
-            if own and listname and own in ocr._norm(listname):
-                next_rank += 1                        # skip our own account
-                continue
-            driver.tap(int(r["tap"][0]), int(r["tap"][1]))
-            time.sleep(1.4)
-            # The Governor ID (stable numeric identity) is on the profile screen,
-            # before More Info. Read it here so renames/dupes resolve reliably.
-            gid = None
-            if id_region:
-                ppng = driver.screencap()
-                gid = ocr.read_int_region(ppng, id_region)
-            try:
-                adapter.run_macro("open_more_info", {})
-                time.sleep(1.0)
-            except Exception:
-                pass
-            mpng = driver.screencap()
-            row = dict(ocr.read_labeled_values(mpng, labels))
-            if gid:
-                row["governor_id"] = str(gid)
-            if name_region:
-                row["name"] = ocr.read_name_region(mpng, name_region)
-            if not row.get("name") and listname:
-                row["name"] = listname            # fall back to the list name
-            if (row.get("name") or row.get("governor_id")) and len(row) > 1:
-                key = row.get("governor_id") or row["name"]
-                seen[key] = row
-            _close_profile_to_list(adapter, driver, title_region)
-            next_rank += 1
+        # Topmost visible row we haven't handled yet.
+        target = next((t for t in rows if t[0] not in scanned), None)
+        if target is None:
+            # Everything on screen is already scanned — scroll for more.
+            driver.swipe(*[int(v) for v in scroll[:4]],
+                         ms=int(scroll[4]) if len(scroll) > 4 else 1100)
+            time.sleep(1.0)
+            after = read_rows(driver.screencap())
+            if after and all(k in scanned for k, _, _ in after):
+                stagnant += 1
+                if stagnant >= 3:        # list isn't advancing -> bottom reached
+                    break
+            else:
+                stagnant = 0
             continue
 
-        # next_rank not on screen — scroll toward it.
-        known = [k for k in rank_row]
-        if scrolled and known and min(known) > next_rank:
-            driver.swipe(*[int(v) for v in scroll_up[:4]],
-                         ms=int(scroll_up[4]) if len(scroll_up) > 4 else 1000)
-        else:
-            driver.swipe(*[int(v) for v in scroll[:4]],
-                         ms=int(scroll[4]) if len(scroll) > 4 else 1000)
-            scrolled = True
-        time.sleep(1.0)
+        stagnant = 0
+        key, rc, val = target
+        scanned.add(key)
+
+        listname = ocr.read_name_region(png, rc["name"]) if rc.get("name") else ""
+        alliance, listname = _split_alliance(listname)
+        if own and listname and own in ocr._norm(listname):
+            continue                      # skip our own account
+
+        driver.tap(int(rc["tap"][0]), int(rc["tap"][1]))
+        time.sleep(1.4)
+        # Governor ID (stable identity) lives on the profile screen, before More Info.
+        gid = None
+        if id_region:
+            gid = ocr.read_int_region(driver.screencap(), id_region)
+        try:
+            adapter.run_macro("open_more_info", {})
+            time.sleep(1.0)
+        except Exception:
+            pass
+        mpng = driver.screencap()
+        row = dict(ocr.read_labeled_values(mpng, labels))
+        if gid:
+            row["governor_id"] = str(gid)
+        # Prefer the large, clean rankings-list name; fall back to More Info.
+        row["name"] = listname or (ocr.read_name_region(mpng, name_region) if name_region else "")
+        if alliance:
+            row["alliance"] = alliance
+        if val is not None and not row.get("power"):
+            row["power"] = val
+        if (row.get("name") or row.get("governor_id")) and len(row) > 1:
+            dkey = row.get("governor_id") or row["name"]
+            seen[dkey] = row
+        _close_profile_to_list(adapter, driver, title_region)
 
     try:
         adapter.run_macro("close_rankings", {})
