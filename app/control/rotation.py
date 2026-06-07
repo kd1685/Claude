@@ -11,6 +11,7 @@ import json
 
 from ..db import get_conn
 from ..models import TITLES
+from ..utils import rows_to_dicts
 from . import actions
 from .adapter import ActionResult
 
@@ -118,7 +119,7 @@ def active_rotation() -> dict | None:
         remaining = max(0, int(rot["hold_seconds"] - _elapsed(active["id"])))
     return {
         "rotation": dict(rot),
-        "members": [dict(m) for m in members],
+        "members": rows_to_dicts(members),
         "active_member_id": active["id"] if active else None,
         "remaining_seconds": remaining,
         "done": sum(1 for m in members if m["status"] in ("done", "skipped", "failed")),

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from ..auth import require_admin
 from ..db import get_conn, upsert_player
 from ..models import PlayerIn
+from ..utils import rows_to_dicts, today
 
 router = APIRouter(prefix="/api/players", tags=["players"])
 
@@ -39,7 +40,7 @@ def list_players(search: str | None = None, limit: int = 200):
         """,
         (*args, limit),
     ).fetchall()
-    return [dict(r) for r in rows]
+    return rows_to_dicts(rows)
 
 
 @router.get("/{player_id:int}")
@@ -57,8 +58,8 @@ def get_player(player_id: int):
         "WHERE player_id=? ORDER BY id DESC LIMIT 20",
         (player_id,),
     ).fetchall()
-    return {"player": dict(p), "history": [dict(r) for r in history],
-            "positions": [dict(r) for r in positions]}
+    return {"player": dict(p), "history": rows_to_dicts(history),
+            "positions": rows_to_dicts(positions)}
 
 
 @router.post("")

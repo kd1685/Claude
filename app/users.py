@@ -8,6 +8,7 @@ import sqlite3
 
 from .config import config
 from .db import get_conn
+from .utils import rows_to_dicts
 
 _ITERATIONS = 200_000
 
@@ -46,7 +47,7 @@ def list_users() -> list[dict]:
         "SELECT id, username, role, active, must_change_password, created_at, last_login "
         "FROM users ORDER BY role='admin' DESC, username"
     ).fetchall()
-    return [dict(r) for r in rows]
+    return rows_to_dicts(rows)
 
 
 def create_user(username: str, password: str, role: str = "officer",

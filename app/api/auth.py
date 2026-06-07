@@ -11,6 +11,14 @@ from ..config import config
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+def _set_session_cookie(response: Response, user) -> None:
+    """Write the signed session cookie with the app's standard settings."""
+    response.set_cookie(
+        COOKIE, make_token(user), max_age=config.SESSION_TTL,
+        httponly=True, samesite=config.COOKIE_SAMESITE, secure=config.COOKIE_SECURE, path="/",
+    )
+
+
 class LoginIn(BaseModel):
     username: str
     password: str
@@ -37,10 +45,7 @@ def login(body: LoginIn, response: Response):
     if not user:
         raise HTTPException(401, "invalid username or password")
     users.touch_login(user["id"])
-    response.set_cookie(
-        COOKIE, make_token(user), max_age=config.SESSION_TTL,
-        httponly=True, samesite=config.COOKIE_SAMESITE, secure=config.COOKIE_SECURE, path="/",
-    )
+    _set_session_cookie(response, user)
     return {"ok": True, "username": user["username"], "role": user["role"]}
 
 
@@ -77,10 +82,7 @@ def change_password(body: ChangePasswordIn, response: Response, user=Depends(req
         raise HTTPException(400, "new password must differ from the current one")
     users.set_password(user["id"], body.new_password, must_change=False)
     # Re-issue the session so the cookie stays valid after the change.
-    response.set_cookie(
-        COOKIE, make_token(user), max_age=config.SESSION_TTL,
-        httponly=True, samesite=config.COOKIE_SAMESITE, secure=config.COOKIE_SECURE, path="/",
-    )
+    _set_session_cookie(response, user)
     return {"ok": True}
 
 

@@ -16,6 +16,7 @@ from ..models import (ChangeRankIn, GiveTitleIn, LocateIn, RotationIn, ScanJobIn
 from ..permissions import permissions_for
 from ..control import get_adapter, rotation
 from ..control.worker import enqueue
+from ..utils import rows_to_dicts
 
 router = APIRouter(prefix="/api/control", tags=["control"])
 
@@ -183,7 +184,7 @@ def commands(limit: int = 50, kind: str | None = None, officer: str | None = Non
              frm: str | None = Query(default=None, alias="from"),
              to: str | None = None, user=Depends(require_ready)):
     sql, args = _audit_query(kind, officer, frm, to, limit)
-    return [dict(r) for r in get_conn().execute(sql, args).fetchall()]
+    return rows_to_dicts(get_conn().execute(sql, args).fetchall())
 
 
 @router.get("/commands.csv")
