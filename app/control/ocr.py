@@ -4,9 +4,12 @@ the app works even when they are not installed (e.g. mock backend on a laptop).
 from __future__ import annotations
 
 import io
+import logging
 import re
 
 from ..config import config
+
+_log = logging.getLogger(__name__)
 
 _AVAILABLE: bool | None = None
 
@@ -23,6 +26,7 @@ def available() -> bool:
             pytesseract.pytesseract.tesseract_cmd = config.TESSERACT_CMD
         _AVAILABLE = True
     except Exception:
+        _log.info("OCR unavailable (Pillow/pytesseract/tesseract not installed)", exc_info=True)
         _AVAILABLE = False
     return _AVAILABLE
 

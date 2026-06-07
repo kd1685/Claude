@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import threading
 
 from ..config import config
@@ -69,6 +70,10 @@ def _process_one() -> bool:
              None if res.ok else res.detail, cmd["id"]),
         )
     except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).exception(
+            "command %s (kind=%s) failed with unhandled exception",
+            cmd["id"], cmd["kind"],
+        )
         conn.execute(
             "UPDATE commands SET status='failed', error=?, finished_at=datetime('now')"
             " WHERE id=?",
@@ -110,10 +115,12 @@ def _tick() -> bool:
 
 
 def _loop() -> None:
+    log = logging.getLogger(__name__)
     while not _stop.is_set():
         try:
             worked = _tick()
         except Exception:
+            log.exception("unhandled error in worker tick")
             worked = False
         if not worked:
             _stop.wait(config.WORKER_INTERVAL)

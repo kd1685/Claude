@@ -29,9 +29,25 @@ def _get(key: str, default: str) -> str:
     return os.environ.get(key, default)
 
 
+def _int(key: str, default: str) -> int:
+    raw = _get(key, default)
+    try:
+        return int(raw)
+    except ValueError:
+        raise ValueError(f"env {key}={raw!r} is not a valid integer") from None
+
+
+def _float(key: str, default: str) -> float:
+    raw = _get(key, default)
+    try:
+        return float(raw)
+    except ValueError:
+        raise ValueError(f"env {key}={raw!r} is not a valid number") from None
+
+
 class Config:
     HOST: str = _get("HOST", "0.0.0.0")
-    PORT: int = int(_get("PORT", "8000"))
+    PORT: int = _int("PORT", "8000")
 
     DB_PATH: Path = (ROOT / _get("DB_PATH", "data/rok1685.db")).resolve()
 
@@ -48,13 +64,13 @@ class Config:
     # in the rankings (its own profile has a different layout that breaks the loop).
     OWN_GOVERNOR: str = _get("OWN_GOVERNOR", "")
 
-    WORKER_INTERVAL: float = float(_get("WORKER_INTERVAL", "3"))
+    WORKER_INTERVAL: float = _float("WORKER_INTERVAL", "3")
 
     # Shared secret the PC agent uses to authenticate (CONTROL_BACKEND=remote).
     AGENT_TOKEN: str = _get("AGENT_TOKEN", "")
     # How long the server waits for the agent to finish one device action (sec).
-    AGENT_TASK_TIMEOUT: float = float(_get("AGENT_TASK_TIMEOUT", "120"))
-    AGENT_SCAN_TIMEOUT: float = float(_get("AGENT_SCAN_TIMEOUT", "900"))
+    AGENT_TASK_TIMEOUT: float = _float("AGENT_TASK_TIMEOUT", "120")
+    AGENT_SCAN_TIMEOUT: float = _float("AGENT_SCAN_TIMEOUT", "900")
 
     # ---- Control-page auth (data pages stay public) ----
     # First-run bootstrap admin officer. Created only if no users exist yet.
@@ -68,7 +84,7 @@ class Config:
     # SameSite for the session cookie. Use "none" (with COOKIE_SECURE=true) when
     # the website is on a different origin than the backend (e.g. GitHub Pages).
     COOKIE_SAMESITE: str = _get("COOKIE_SAMESITE", "lax").lower()
-    SESSION_TTL: int = int(_get("SESSION_TTL", str(60 * 60 * 24 * 7)))  # 7 days
+    SESSION_TTL: int = _int("SESSION_TTL", str(60 * 60 * 24 * 7))  # 7 days
 
     # Comma-separated origins allowed to call the API from a browser (CORS).
     # e.g. "https://kd1685.github.io". Empty = same-origin only.

@@ -7,6 +7,7 @@ so adapting to a new resolution means editing JSON, not code.
 """
 from __future__ import annotations
 
+import logging
 import subprocess
 import time
 
@@ -14,6 +15,8 @@ from ..config import config
 from . import ocr
 from .adapter import AccountAdapter, ActionResult
 from .profile import UIProfile, render
+
+_log = logging.getLogger(__name__)
 
 
 class AdbError(RuntimeError):
@@ -104,6 +107,7 @@ class AdbAdapter(AccountAdapter):
         try:
             devs = self.driver.devices()
         except Exception:
+            _log.warning("failed to list ADB devices for status check", exc_info=True)
             devs = []
         return {
             "backend": "adb",

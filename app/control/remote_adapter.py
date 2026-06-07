@@ -10,11 +10,14 @@ implements the same AccountAdapter interface as the mock/adb backends.
 from __future__ import annotations
 
 import json
+import logging
 import time
 
 from ..config import config
 from ..db import get_conn
 from .adapter import AccountAdapter, ActionResult
+
+_log = logging.getLogger(__name__)
 
 
 def _agent_online() -> bool:
@@ -54,6 +57,8 @@ class RemoteAdapter(AccountAdapter):
                         detail = payload.get("detail", "")
                         data = payload.get("data", {}) or {}
                     except Exception:
+                        _log.warning("could not parse agent result as JSON for task %s",
+                                     task_id, exc_info=True)
                         detail = row["result"]
                 ok = bool(row["ok"]) and row["status"] != "cancelled"
                 return ActionResult(ok, detail or (row["error"] or "stopped"), data)
