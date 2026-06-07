@@ -119,8 +119,8 @@
     ],
     "scroll": [640, 540, 640, 250, 1100],
     "name_region": [285, 105, 300, 40],
-    "id_region": null,
-    "_id_region_help": "Governor ID box on the PROFILE screen (the numeric ID with the copy icon under the name, before More Info). Set [x,y,w,h] once calibrated from a clean profile screenshot; until then it is skipped.",
+    "id_region": [465, 148, 215, 28],
+    "_id_region_help": "Governor ID on the PROFILE screen: the 'Governor (ID: NNNNNNNN)' line just above the name. Box spans the whole label; parse_int pulls the digits. Calibrated from a clean 1280x720 profile frame (ID 58509816).",
     "title_region": [360, 40, 560, 55],
     "labels": {
       "power":        "Power",

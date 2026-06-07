@@ -248,19 +248,22 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
 
         driver.tap(int(rc["tap"][0]), int(rc["tap"][1]))
         time.sleep(1.4)
-        # Governor ID (stable identity) lives on the profile screen, before More Info.
-        gid = None
+        # The profile screen (before More Info) has the Governor ID plus clean,
+        # labelled Power / Kill Points. Read those here, then let More Info add
+        # the dead troops + resource stats (merged on top).
+        ppng = driver.screencap()
+        row = dict(ocr.read_labeled_values(ppng, labels))
         if id_region:
-            gid = ocr.read_int_region(driver.screencap(), id_region)
+            gid = ocr.read_int_region(ppng, id_region)
+            if gid:
+                row["governor_id"] = str(gid)
         try:
             adapter.run_macro("open_more_info", {})
             time.sleep(1.0)
         except Exception:
             pass
         mpng = driver.screencap()
-        row = dict(ocr.read_labeled_values(mpng, labels))
-        if gid:
-            row["governor_id"] = str(gid)
+        row.update(ocr.read_labeled_values(mpng, labels))
         # Prefer the large, clean rankings-list name; fall back to More Info.
         row["name"] = listname or (ocr.read_name_region(mpng, name_region) if name_region else "")
         if alliance:
