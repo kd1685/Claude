@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS players (
     name         TEXT NOT NULL,
     alliance     TEXT,
     rank         INTEGER DEFAULT 1,            -- R1..R5
+    name_locked  INTEGER NOT NULL DEFAULT 0,   -- 1 = admin-corrected; scans won't overwrite
     created_at   TEXT DEFAULT (datetime('now'))
 );
 
@@ -236,6 +237,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if dcols and "cancel_requested" not in dcols:
         conn.execute(
             "ALTER TABLE device_tasks ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0")
+    pcols = {r["name"] for r in conn.execute("PRAGMA table_info(players)")}
+    if pcols and "name_locked" not in pcols:
+        conn.execute(
+            "ALTER TABLE players ADD COLUMN name_locked INTEGER NOT NULL DEFAULT 0")
 
 
 def upsert_player(name: str, governor_id: str | None = None,
@@ -244,20 +249,23 @@ def upsert_player(name: str, governor_id: str | None = None,
     conn = get_conn()
     row = None
     if governor_id:
-        row = conn.execute("SELECT id FROM players WHERE governor_id = ?",
+        row = conn.execute("SELECT id, name_locked FROM players WHERE governor_id = ?",
                            (governor_id,)).fetchone()
     if row is None:
-        row = conn.execute("SELECT id FROM players WHERE name = ?", (name,)).fetchone()
+        row = conn.execute("SELECT id, name_locked FROM players WHERE name = ?",
+                           (name,)).fetchone()
     if row:
         pid = row["id"]
+        # Don't let a scan's OCR clobber a name an admin corrected by hand.
+        locked = bool(row["name_locked"]) if "name_locked" in row.keys() else False
         conn.execute(
             """UPDATE players SET
-                 name = COALESCE(?, name),
-                 governor_id = COALESCE(?, governor_id),
+                 name = CASE WHEN ? THEN name ELSE COALESCE(?, name) END,
+                 governor_id = COALESCE(governor_id, ?),
                  alliance = COALESCE(?, alliance),
                  rank = COALESCE(?, rank)
                WHERE id = ?""",
-            (name, governor_id, alliance, rank, pid),
+            (1 if locked else 0, name, governor_id, alliance, rank, pid),
         )
         return pid
     cur = conn.execute(

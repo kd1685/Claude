@@ -243,6 +243,38 @@ def _advanced(client):
     assert client.get("/api/players").json() == []
 
 
+def test_governor_id_identity():
+    """Governor ID is the stable identity: scans match on it across name changes,
+    and an admin-corrected name is never clobbered by a later scan's OCR misread."""
+    with TestClient(app) as client:
+        client.post("/api/auth/login", json={"username": "king", "password": "s3cret"})
+
+        # First deep scan reads a (misspelled) name + the governor's numeric ID.
+        client.post("/api/scans", json={
+            "kind": "power", "captured_at": "2026-06-01", "source": "adb",
+            "rows": [{"name": "NANIIIIUIIUE", "governor_id": "55501", "power": 9_000_000}],
+        })
+        roster = client.get("/api/players?search=NANI").json()
+        assert len(roster) == 1 and roster[0]["governor_id"] == "55501"
+        pid = roster[0]["id"]
+
+        # Admin corrects the name by hand (this locks it).
+        assert client.patch(f"/api/players/{pid}",
+                            json={"name": "naniiiiiiiiiii"}).status_code == 200
+
+        # A later scan finds the SAME governor by ID even though OCR misread the
+        # name again — and the corrected name must survive.
+        client.post("/api/scans", json={
+            "kind": "power", "captured_at": "2026-06-02", "source": "adb",
+            "rows": [{"name": "NANIIUUIE", "governor_id": "55501", "power": 9_500_000}],
+        })
+        same = client.get(f"/api/players/{pid}").json()["player"]
+        assert same["name"] == "naniiiiiiiiiii"        # not overwritten
+        assert same["governor_id"] == "55501"
+        # No duplicate row was created for the misread name.
+        assert client.get("/api/players?search=NANIIUUIE").json() == []
+
+
 def test_remote_agent():
     """RemoteAdapter hands a task to the agent (via the API) and gets the result."""
     import threading

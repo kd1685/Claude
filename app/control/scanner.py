@@ -172,6 +172,7 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
     rows_cfg = cfg["rows"]
     labels = cfg.get("labels", {})
     name_region = cfg.get("name_region")
+    id_region = cfg.get("id_region")          # Governor ID on the profile screen
     title_region = cfg.get("title_region", [360, 40, 560, 55])
     scroll = cfg.get("scroll", [640, 580, 640, 300, 1100])
     scroll_up = [scroll[0], scroll[3], scroll[2], scroll[1]] + list(scroll[4:])
@@ -208,6 +209,12 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
                 continue
             driver.tap(int(r["tap"][0]), int(r["tap"][1]))
             time.sleep(1.4)
+            # The Governor ID (stable numeric identity) is on the profile screen,
+            # before More Info. Read it here so renames/dupes resolve reliably.
+            gid = None
+            if id_region:
+                ppng = driver.screencap()
+                gid = ocr.read_int_region(ppng, id_region)
             try:
                 adapter.run_macro("open_more_info", {})
                 time.sleep(1.0)
@@ -215,12 +222,15 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
                 pass
             mpng = driver.screencap()
             row = dict(ocr.read_labeled_values(mpng, labels))
+            if gid:
+                row["governor_id"] = str(gid)
             if name_region:
                 row["name"] = ocr.read_name_region(mpng, name_region)
             if not row.get("name") and listname:
                 row["name"] = listname            # fall back to the list name
-            if row.get("name") and len(row) > 1:
-                seen[row["name"]] = row
+            if (row.get("name") or row.get("governor_id")) and len(row) > 1:
+                key = row.get("governor_id") or row["name"]
+                seen[key] = row
             _close_profile_to_list(adapter, driver, title_region)
             next_rank += 1
             continue

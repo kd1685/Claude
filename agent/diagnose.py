@@ -61,6 +61,15 @@ def main() -> int:
             rl = ocr.ocr_region(png, r["name"]).strip().splitlines()
             raw = rl[0].strip() if rl else ""
         print(f"  row {i}: rank={rk!s:<5} name={nm!r}  (raw={raw!r}, rank box {r.get('rank')})")
+    idr = cfg.get("id_region")
+    print(f"\nid_region={idr}  (Governor ID box on the profile screen)")
+    if idr:
+        print(f"  reads: {ocr.read_int_region(png, idr)!s}")
+    else:
+        print("  not calibrated yet — open a governor's PROFILE screen (the one")
+        print("  with the numeric ID + copy icon under the name) and send me that")
+        print("  screenshot so I can set id_region; then deep scans capture the ID.")
+
     print("\nOpen captures\\diagnose.png and send it to me with the lines above.")
     return 0
 

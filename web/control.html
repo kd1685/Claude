@@ -125,7 +125,7 @@
     <p class="sub">Correct any name OCR misread (e.g. "NANIIIIUIIUE" → "naniiiiiiiiiii"). Click a name to edit it, or remove a junk row.</p>
     <div class="field" style="max-width:360px"><label>Search</label><input id="ro_search" placeholder="filter by name…" /></div>
     <table>
-      <thead><tr><th>Governor</th><th>Alliance</th><th class="num">Power</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Governor</th><th>Governor ID</th><th>Alliance</th><th class="num">Power</th><th>Actions</th></tr></thead>
       <tbody id="roster"></tbody>
     </table>
   </div>
@@ -192,11 +192,12 @@ async function loadRoster() {
     <tr>
       <td><span class="roname" data-id="${r.id}" data-name="${(r.name||"").replace(/"/g,'&quot;')}"
             style="cursor:pointer;border-bottom:1px dotted var(--muted)" title="click to rename">${r.name||"(blank)"}</span></td>
+      <td class="muted">${r.governor_id || "—"}</td>
       <td><span class="tag">${r.alliance || "—"}</span></td>
       <td class="num">${fmt(r.power)}</td>
       <td><button data-del="${r.id}" data-name="${(r.name||"").replace(/"/g,'&quot;')}"
             style="font-size:11px;padding:3px 7px;border-color:var(--red);color:var(--red)">Delete</button></td>
-    </tr>`).join("") || `<tr><td colspan="4" class="muted">No governors.</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="5" class="muted">No governors.</td></tr>`;
   document.querySelectorAll('#roster .roname').forEach(el => el.onclick = async () => {
     const cur = el.dataset.name;
     const name = prompt("Correct governor name:", cur);

@@ -110,10 +110,17 @@ def edit_player(player_id: int, body: PlayerPatch, admin=Depends(require_admin))
     conn = get_conn()
     if not conn.execute("SELECT 1 FROM players WHERE id=?", (player_id,)).fetchone():
         raise HTTPException(404, "player not found")
+    # A hand-corrected name is authoritative: lock it so future scans can't
+    # overwrite it with an OCR misread.
+    if "name" in fields:
+        fields["name_locked"] = 1
     sets = ", ".join(f"{k}=?" for k in fields)
-    conn.execute(f"UPDATE players SET {sets} WHERE id=?",
-                 (*fields.values(), player_id))
-    conn.commit()
+    try:
+        conn.execute(f"UPDATE players SET {sets} WHERE id=?",
+                     (*fields.values(), player_id))
+        conn.commit()
+    except Exception as exc:   # e.g. duplicate governor_id (UNIQUE)
+        raise HTTPException(409, f"could not update: {exc}")
     return {"ok": True, "updated": list(fields)}
 
 
