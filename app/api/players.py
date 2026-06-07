@@ -89,7 +89,18 @@ def prune(days: int = 7, admin=Depends(require_admin)):
     return {"removed": cur.rowcount, "cutoff": cutoff}
 
 
-@router.delete("/{player_id}")
+@router.post("/clear")
+def clear_all(confirm: bool = False, admin=Depends(require_admin)):
+    """Wipe the ENTIRE governor roster + their history. Requires confirm=true."""
+    if not confirm:
+        raise HTTPException(400, "pass confirm=true to wipe the whole roster")
+    conn = get_conn()
+    cur = conn.execute("DELETE FROM players")
+    conn.commit()
+    return {"removed": cur.rowcount}
+
+
+@router.delete("/{player_id:int}")
 def delete_player(player_id: int, admin=Depends(require_admin)):
     """Delete one governor and all their history (for junk/misread names)."""
     conn = get_conn()

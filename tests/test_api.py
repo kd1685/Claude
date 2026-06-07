@@ -230,6 +230,10 @@ def _advanced(client):
     assert "count" in client.get("/api/players/prune-preview?days=7").json()
     assert client.delete(f"/api/players/{ids[0]}").status_code == 200
     assert client.get(f"/api/players/{ids[0]}").status_code == 404
+    # Clear-all requires confirm and then empties the roster.
+    assert client.post("/api/players/clear").status_code == 400
+    assert "removed" in client.post("/api/players/clear?confirm=true").json()
+    assert client.get("/api/players").json() == []
 
 
 def test_remote_agent():

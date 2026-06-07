@@ -117,7 +117,8 @@
     <div class="row" style="align-items:end">
       <div class="field"><label>Not seen in (days)</label><input id="cl_days" type="number" value="3" min="0" max="90" style="width:130px" /></div>
       <button id="cl_preview">Preview</button>
-      <button id="cl_remove" style="border-color:var(--red);color:var(--red)">Remove</button>
+      <button id="cl_remove" style="border-color:var(--red);color:var(--red)">Remove not seen</button>
+      <button id="cl_clear" style="border-color:var(--red);color:var(--red)">Clear ALL governors</button>
     </div>
     <p class="hint" id="cl_msg"></p>
   </div>
@@ -439,6 +440,16 @@ async function startApp(me) {
       document.getElementById("cl_msg").style.color = "var(--green)";
       document.getElementById("cl_msg").textContent = `Removed ${r.removed} governor(s).`;
       toast(`Removed ${r.removed}`); loadPlayers();
+    } catch (e) { document.getElementById("cl_msg").textContent = "Error: " + e.message; }
+  };
+  document.getElementById("cl_clear").onclick = async () => {
+    if (!confirm("⚠ This permanently DELETES every governor and all their history.")) return;
+    if (!confirm("Really wipe the ENTIRE roster? This cannot be undone.")) return;
+    try {
+      const r = await post("/api/players/clear?confirm=true");
+      document.getElementById("cl_msg").style.color = "var(--green)";
+      document.getElementById("cl_msg").textContent = `Cleared ${r.removed} governor(s) — roster is now empty.`;
+      toast(`Cleared ${r.removed}`); loadPlayers();
     } catch (e) { document.getElementById("cl_msg").textContent = "Error: " + e.message; }
   };
   renderQueue();
