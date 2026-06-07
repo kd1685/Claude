@@ -18,5 +18,5 @@ rmdir /S /Q claude-main
 del _latest.zip
 echo.
 echo Done.  Now restart the agent:   python agent\agent.py
-echo (It should print version 2026.06.04-verify-close or newer.)
+echo (It should print version 2026.06.07b-value-dedup or newer.)
 pause
