@@ -61,13 +61,10 @@
     </div>
 
     <div class="card">
-      <div class="label">Scan rankings</div>
-      <label style="display:block;margin-top:8px"><input type="checkbox" id="s_power" checked> Power</label>
-      <label style="display:block"><input type="checkbox" id="s_kp" checked> Kill Points</label>
-      <div class="field" style="margin-top:8px"><label>Pages (fast list)</label><input id="s_pages" type="number" value="50" min="1" max="50" /></div>
-      <div class="field" style="margin-top:8px"><label>Players (deep scan)</label><input id="s_count" type="number" value="100" min="1" max="1000" /></div>
-      <button class="primary" style="margin-top:10px;width:100%" id="s_go">Scan selected (fast list)</button>
-      <button style="margin-top:6px;width:100%" id="s_deep">Deep scan + deads (slow)</button>
+      <div class="label">Scan</div>
+      <p class="hint" style="margin-top:6px">Deep scan opens each governor's profile and reads <b>power, kill points, dead troops & RSS</b>, ranks 1–N in order.</p>
+      <div class="field" style="margin-top:8px"><label>Players (top N)</label><input id="s_count" type="number" value="100" min="1" max="1000" /></div>
+      <button class="primary" style="margin-top:10px;width:100%" id="s_deep">Deep scan (power · KP · deads)</button>
       <button style="margin-top:6px;width:100%" id="s_rally">Scan alliance rallies</button>
     </div>
   </div>
@@ -100,7 +97,7 @@
   <div class="panel" id="schedPanel" style="display:none">
     <h2>Automatic scans <span class="muted" style="font-size:12px">· admin only</span></h2>
     <div class="row" style="align-items:end;margin-bottom:12px">
-      <div class="field"><label>Job</label><select id="sc_kind"><option value="power">Power (list)</option><option value="killpoints">Kill Points (list)</option><option value="profiles">Deep scan + deads</option><option value="rallies">Alliance rallies</option></select></div>
+      <div class="field"><label>Job</label><select id="sc_kind"><option value="profiles">Deep scan (power · KP · deads)</option><option value="rallies">Alliance rallies</option></select></div>
       <div class="field"><label>Time (UTC)</label><input id="sc_time" type="time" value="02:00" /></div>
       <div class="field"><label>Pages</label><input id="sc_pages" type="number" value="4" min="1" max="50" style="width:90px" /></div>
       <button class="primary" id="sc_add">Add schedule</button>
@@ -347,17 +344,6 @@ async function startApp(me) {
     try { const r = await post("/api/control/locate-all"); toast(`Queued ${r.queued} locates`); loadQueue(); }
     catch (e) { toast("Error: " + e.message); }
   };
-  document.getElementById("s_go").onclick = async () => {
-    const pages = +s_pages.value;
-    const kinds = [];
-    if (document.getElementById("s_power").checked) kinds.push("power");
-    if (document.getElementById("s_kp").checked) kinds.push("killpoints");
-    if (!kinds.length) { toast("Pick at least one ranking"); return; }
-    try {
-      for (const k of kinds) await post("/api/control/scan", { kind: k, pages });
-      toast(`Queued ${kinds.length} scan(s)`); loadQueue();
-    } catch (e) { toast("Error: " + e.message); }
-  };
   document.getElementById("q_cancel_all").onclick = async () => {
     try { const r = await post("/api/control/commands/cancel-pending");
       toast(`Cancelled ${r.cancelled} pending`); loadQueue(); }
@@ -371,7 +357,7 @@ async function startApp(me) {
   document.getElementById("s_deep").onclick = () => queued(post("/api/control/scan-profiles",
     { count: +document.getElementById("s_count").value }));
   document.getElementById("s_rally").onclick = () => queued(post("/api/control/scan-rallies",
-    { pages: +s_pages.value }));
+    { pages: 10 }));
   document.getElementById("o_add").onclick = async () => {
     try {
       await post("/api/auth/users", {

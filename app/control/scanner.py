@@ -148,10 +148,14 @@ def _close_profile_to_list(adapter, driver, title_region):
 
 
 def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
-    """Deep scan the top `count` governors (Statsmaster-style). Reads each row's
-    RANK NUMBER + name so it never skips or double-scans, skips the controlling
-    account's own row, opens each profile -> More Info, and reads the stat block
-    (incl. DEAD troops) by LABEL."""
+    """Deep scan governors ranked 1..count, deterministically BY RANK NUMBER.
+
+    Each step hunts for the *exact next rank* on screen; if it isn't visible it
+    scrolls toward it (up if we overshot, down otherwise). This guarantees every
+    rank 1..count is scanned once — no skips, no duplicates — regardless of how
+    far a scroll flings. Opens each profile -> More Info and reads the stat block
+    (incl. DEAD troops) by label. Skips the controlling account's own row.
+    """
     if not ocr.available():
         return ActionResult(False, "OCR not available (install requirements-adb.txt + tesseract)")
     cfg = adapter.profile.data.get("profiles")
@@ -169,39 +173,45 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
     labels = cfg.get("labels", {})
     name_region = cfg.get("name_region")
     title_region = cfg.get("title_region", [360, 40, 560, 55])
-    scroll = cfg.get("scroll", [640, 560, 640, 220, 1100])   # gentle/slow by default
+    scroll = cfg.get("scroll", [640, 580, 640, 300, 1100])
+    scroll_up = [scroll[0], scroll[3], scroll[2], scroll[1]] + list(scroll[4:])
+
+    def read_ranks(png):
+        out = []
+        for r in rows_cfg:
+            rk = ocr.parse_int(ocr.ocr_region(png, r["rank"], digits=True)) if r.get("rank") else None
+            out.append(rk)
+        return out
 
     seen: dict[str, dict] = {}
-    done = set()              # ranks (or list-names) already handled
-    max_rank = 0
-    stalls = 0
+    next_rank = 1
+    scrolled = False
     guard = 0
-    while len(seen) < count and stalls < 3 and guard < count * 3 + 30:
+    while next_rank <= count and guard < count * 6 + 50:
         guard += 1
         if _stop(adapter):
             break
         png = driver.screencap()
-        screen = []
-        for r in rows_cfg:
-            rk = ocr.parse_int(ocr.ocr_region(png, r["rank"], digits=True)) if r.get("rank") else None
-            nm = ""
+        ranks = read_ranks(png)
+        rank_row = {}
+        for idx, rk in enumerate(ranks):
+            if rk and 1 <= rk <= count + 8:
+                rank_row.setdefault(rk, rows_cfg[idx])
+        # At the very top (before any scroll) the medal ranks 1-3 may not OCR, so
+        # fall back to row position: row 0 = rank 1, row 1 = rank 2, ...
+        if not scrolled:
+            for idx in range(len(rows_cfg)):
+                rank_row.setdefault(idx + 1, rows_cfg[idx])
+
+        if next_rank in rank_row:
+            r = rank_row[next_rank]
+            listname = ""
             if r.get("name"):
                 nl = ocr.ocr_region(png, r["name"]).strip().splitlines()
-                nm = nl[0].strip() if nl else ""
-            screen.append((rk, nm, r))
-
-        progressed = False
-        for rk, listname, r in screen:
-            key = rk if rk is not None else ("n:" + ocr._norm(listname))
-            if not key or key in done:
-                continue
-            if rk is not None and rk > count:
-                continue
-            done.add(key)
-            if rk is not None:
-                max_rank = max(max_rank, rk)
+                listname = nl[0].strip() if nl else ""
             if own and listname and own in ocr._norm(listname):
-                continue                              # skip our own account's row
+                next_rank += 1                        # skip our own account
+                continue
             driver.tap(int(r["tap"][0]), int(r["tap"][1]))
             time.sleep(1.4)
             try:
@@ -216,24 +226,20 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
                 row["name"] = nl[0].strip() if nl else ""
             if row.get("name") and len(row) > 1:
                 seen[row["name"]] = row
-                progressed = True
             _close_profile_to_list(adapter, driver, title_region)
-            if len(seen) >= count or _stop(adapter):
-                break
-        if len(seen) >= count or _stop(adapter):
-            break
+            next_rank += 1
+            continue
 
-        driver.swipe(*[int(v) for v in scroll[:4]],
-                     ms=int(scroll[4]) if len(scroll) > 4 else 1000)
+        # next_rank not on screen — scroll toward it.
+        known = [k for k in rank_row]
+        if scrolled and known and min(known) > next_rank:
+            driver.swipe(*[int(v) for v in scroll_up[:4]],
+                         ms=int(scroll_up[4]) if len(scroll_up) > 4 else 1000)
+        else:
+            driver.swipe(*[int(v) for v in scroll[:4]],
+                         ms=int(scroll[4]) if len(scroll) > 4 else 1000)
+            scrolled = True
         time.sleep(1.0)
-        # Overshoot recovery: if the new top rank jumped past what we've done,
-        # the fling scrolled too far — nudge back up so we don't skip players.
-        if max_rank and rows_cfg[0].get("rank"):
-            toprk = ocr.parse_int(ocr.ocr_region(driver.screencap(), rows_cfg[0]["rank"], digits=True))
-            if toprk and toprk > max_rank + 1:
-                driver.swipe(int(scroll[0]), int(scroll[3]), int(scroll[2]), int(scroll[1]), ms=900)
-                time.sleep(1.0)
-        stalls = 0 if progressed else stalls + 1
 
     try:
         adapter.run_macro("close_rankings", {})
