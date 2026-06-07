@@ -120,6 +120,16 @@
     <p class="hint" id="cl_msg"></p>
   </div>
 
+  <div class="panel" id="rosterPanel" style="display:none">
+    <h2>Fix governor names <span class="muted" style="font-size:12px">· admin only</span></h2>
+    <p class="sub">Correct any name OCR misread (e.g. "NANIIIIUIIUE" → "naniiiiiiiiiii"). Click a name to edit it, or remove a junk row.</p>
+    <div class="field" style="max-width:360px"><label>Search</label><input id="ro_search" placeholder="filter by name…" /></div>
+    <table>
+      <thead><tr><th>Governor</th><th>Alliance</th><th class="num">Power</th><th>Actions</th></tr></thead>
+      <tbody id="roster"></tbody>
+    </table>
+  </div>
+
   <div class="panel" id="myAccount" style="max-width:520px">
     <h2>My account</h2>
     <p class="sub" id="cp_sub">Change your own password.</p>
@@ -172,6 +182,36 @@ async function loadPlayers() {
   _playersCache = players;
   const opts = players.map(p => `<option value="${p.id}">${p.name}${p.alliance?` [${p.alliance}]`:""}</option>`).join("");
   ["t_player","r_player","l_player","rot_pick"].forEach(id => document.getElementById(id).innerHTML = opts);
+}
+
+let _roTimer;
+async function loadRoster() {
+  const s = document.getElementById("ro_search").value.trim();
+  const rows = await api(`/api/players?limit=500${s ? `&search=${encodeURIComponent(s)}` : ""}`);
+  document.getElementById("roster").innerHTML = rows.map(r => `
+    <tr>
+      <td><span class="roname" data-id="${r.id}" data-name="${(r.name||"").replace(/"/g,'&quot;')}"
+            style="cursor:pointer;border-bottom:1px dotted var(--muted)" title="click to rename">${r.name||"(blank)"}</span></td>
+      <td><span class="tag">${r.alliance || "—"}</span></td>
+      <td class="num">${fmt(r.power)}</td>
+      <td><button data-del="${r.id}" data-name="${(r.name||"").replace(/"/g,'&quot;')}"
+            style="font-size:11px;padding:3px 7px;border-color:var(--red);color:var(--red)">Delete</button></td>
+    </tr>`).join("") || `<tr><td colspan="4" class="muted">No governors.</td></tr>`;
+  document.querySelectorAll('#roster .roname').forEach(el => el.onclick = async () => {
+    const cur = el.dataset.name;
+    const name = prompt("Correct governor name:", cur);
+    if (name === null || name.trim() === "" || name === cur) return;
+    try { await api(`/api/players/${el.dataset.id}`, { method: "PATCH",
+            headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
+          toast("Renamed"); loadRoster(); loadPlayers(); }
+    catch (e) { toast("Error: " + e.message); }
+  });
+  document.querySelectorAll('#roster button[data-del]').forEach(b => b.onclick = async () => {
+    if (!confirm(`Delete "${b.dataset.name}" and all their history?`)) return;
+    try { await api(`/api/players/${b.dataset.del}`, { method: "DELETE" });
+          toast("Deleted"); loadRoster(); loadPlayers(); }
+    catch (e) { toast("Error: " + e.message); }
+  });
 }
 
 async function loadQueue() {
@@ -314,7 +354,8 @@ async function startApp(me) {
     document.getElementById("officersPanel").style.display = "";
     document.getElementById("schedPanel").style.display = "";
     document.getElementById("cleanupPanel").style.display = "";
-    tasks.push(loadOfficers(), loadSchedules());
+    document.getElementById("rosterPanel").style.display = "";
+    tasks.push(loadOfficers(), loadSchedules(), loadRoster());
   }
   await Promise.all(tasks);
 
@@ -410,6 +451,8 @@ async function startApp(me) {
       toast("Schedule added"); await loadSchedules();
     } catch (e) { toast("Error: " + e.message); }
   };
+  const roSearch = document.getElementById("ro_search");
+  if (roSearch) roSearch.oninput = () => { clearTimeout(_roTimer); _roTimer = setTimeout(loadRoster, 250); };
   document.getElementById("cl_preview").onclick = async () => {
     try {
       const r = await api(`/api/players/prune-preview?days=${+document.getElementById("cl_days").value}`);
@@ -425,7 +468,7 @@ async function startApp(me) {
       const r = await post(`/api/players/prune?days=${days}`);
       document.getElementById("cl_msg").style.color = "var(--green)";
       document.getElementById("cl_msg").textContent = `Removed ${r.removed} governor(s).`;
-      toast(`Removed ${r.removed}`); loadPlayers();
+      toast(`Removed ${r.removed}`); loadPlayers(); loadRoster();
     } catch (e) { document.getElementById("cl_msg").textContent = "Error: " + e.message; }
   };
   document.getElementById("cl_clear").onclick = async () => {
@@ -435,7 +478,7 @@ async function startApp(me) {
       const r = await post("/api/players/clear?confirm=true");
       document.getElementById("cl_msg").style.color = "var(--green)";
       document.getElementById("cl_msg").textContent = `Cleared ${r.removed} governor(s) — roster is now empty.`;
-      toast(`Cleared ${r.removed}`); loadPlayers();
+      toast(`Cleared ${r.removed}`); loadPlayers(); loadRoster();
     } catch (e) { document.getElementById("cl_msg").textContent = "Error: " + e.message; }
   };
   renderQueue();

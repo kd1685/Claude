@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import require_admin
 from ..db import get_conn, upsert_player
-from ..models import PlayerIn
+from ..models import PlayerIn, PlayerPatch
 
 router = APIRouter(prefix="/api/players", tags=["players"])
 
@@ -98,6 +98,23 @@ def clear_all(confirm: bool = False, admin=Depends(require_admin)):
     cur = conn.execute("DELETE FROM players")
     conn.commit()
     return {"removed": cur.rowcount}
+
+
+@router.patch("/{player_id:int}")
+def edit_player(player_id: int, body: PlayerPatch, admin=Depends(require_admin)):
+    """Correct a governor's details — most importantly the NAME when OCR misread
+    it (e.g. 'NANIIIIUIIUE' -> 'naniiiiiiiiiii'). Only sends fields you set."""
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not fields:
+        raise HTTPException(400, "no fields to update")
+    conn = get_conn()
+    if not conn.execute("SELECT 1 FROM players WHERE id=?", (player_id,)).fetchone():
+        raise HTTPException(404, "player not found")
+    sets = ", ".join(f"{k}=?" for k in fields)
+    conn.execute(f"UPDATE players SET {sets} WHERE id=?",
+                 (*fields.values(), player_id))
+    conn.commit()
+    return {"ok": True, "updated": list(fields)}
 
 
 @router.delete("/{player_id:int}")

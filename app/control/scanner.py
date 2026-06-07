@@ -177,11 +177,8 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
     scroll_up = [scroll[0], scroll[3], scroll[2], scroll[1]] + list(scroll[4:])
 
     def read_ranks(png):
-        out = []
-        for r in rows_cfg:
-            rk = ocr.parse_int(ocr.ocr_region(png, r["rank"], digits=True)) if r.get("rank") else None
-            out.append(rk)
-        return out
+        return [ocr.read_int_region(png, r["rank"]) if r.get("rank") else None
+                for r in rows_cfg]
 
     seen: dict[str, dict] = {}
     next_rank = 1
@@ -205,10 +202,7 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
 
         if next_rank in rank_row:
             r = rank_row[next_rank]
-            listname = ""
-            if r.get("name"):
-                nl = ocr.ocr_region(png, r["name"]).strip().splitlines()
-                listname = nl[0].strip() if nl else ""
+            listname = ocr.read_name_region(png, r["name"]) if r.get("name") else ""
             if own and listname and own in ocr._norm(listname):
                 next_rank += 1                        # skip our own account
                 continue
@@ -222,8 +216,9 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
             mpng = driver.screencap()
             row = dict(ocr.read_labeled_values(mpng, labels))
             if name_region:
-                nl = ocr.ocr_region(mpng, name_region).strip().splitlines()
-                row["name"] = nl[0].strip() if nl else ""
+                row["name"] = ocr.read_name_region(mpng, name_region)
+            if not row.get("name") and listname:
+                row["name"] = listname            # fall back to the list name
             if row.get("name") and len(row) > 1:
                 seen[row["name"]] = row
             _close_profile_to_list(adapter, driver, title_region)

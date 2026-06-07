@@ -27,18 +27,26 @@ def available() -> bool:
     return _AVAILABLE
 
 
-def _preprocess(img):
-    """Grayscale + upscale + threshold; helps tesseract on game fonts."""
+def _preprocess(img, invert: bool = False, soft: bool = False, scale: int = 2):
+    """Grayscale + upscale + (threshold | autocontrast); helps tesseract on game
+    fonts. `soft` keeps glyph shapes (better for stylized names); the hard
+    threshold is better for clean digits."""
     from PIL import Image, ImageOps
     img = ImageOps.grayscale(img)
     w, h = img.size
-    img = img.resize((w * 2, h * 2), Image.LANCZOS)
-    img = img.point(lambda p: 255 if p > 140 else 0)
+    img = img.resize((w * scale, h * scale), Image.LANCZOS)
+    if soft:
+        img = ImageOps.autocontrast(img)
+    else:
+        img = img.point(lambda p: 255 if p > 140 else 0)
+    if invert:                       # black-on-white reads better for some fonts
+        img = ImageOps.invert(img)
     return img
 
 
 def ocr_region(png_bytes: bytes, region: list[int] | None = None,
-               digits: bool = False) -> str:
+               digits: bool = False, invert: bool = False,
+               soft: bool = False, scale: int = 2) -> str:
     """OCR a screenshot (optionally a [x, y, w, h] crop). Returns raw text."""
     if not available():
         return ""
@@ -49,11 +57,37 @@ def ocr_region(png_bytes: bytes, region: list[int] | None = None,
     if region:
         x, y, w, h = region
         img = img.crop((x, y, x + w, y + h))
-    img = _preprocess(img)
-    cfg = "--psm 6"
+    img = _preprocess(img, invert=invert, soft=soft, scale=scale)
     if digits:
-        cfg += " -c tessedit_char_whitelist=0123456789,."
+        cfg = "--psm 7 -c tessedit_char_whitelist=0123456789,."
+    else:
+        cfg = "--psm 7"
     return pytesseract.image_to_string(img, config=cfg)
+
+
+def read_name_region(png_bytes: bytes, region: list[int]) -> str:
+    """Read a governor name as accurately as we can: try a few preprocessing
+    variants and keep the one with the most letters (stylized RoK font)."""
+    best = ""
+    for soft in (True, False):
+        for inv in (True, False):
+            t = ocr_region(png_bytes, region, invert=inv, soft=soft, scale=3)
+            line = t.strip().splitlines()
+            line = line[0].strip() if line else ""
+            letters = sum(c.isalnum() for c in line)
+            if letters > sum(c.isalnum() for c in best):
+                best = line
+    return best
+
+
+def read_int_region(png_bytes: bytes, region: list[int]) -> int | None:
+    """Read a number from a region, trying both polarities (yellow rank numbers
+    on a blue row read much better inverted)."""
+    for inv in (False, True):
+        v = parse_int(ocr_region(png_bytes, region, digits=True, invert=inv))
+        if v is not None:
+            return v
+    return None
 
 
 def parse_int(text: str) -> int | None:

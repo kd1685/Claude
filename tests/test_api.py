@@ -226,6 +226,13 @@ def _advanced(client):
     # Stop-current returns how many running scans were signalled.
     assert "stopping" in client.post("/api/control/stop-current").json()
 
+    # Rename a governor (fix an OCR misread). Empty patch is rejected.
+    assert client.patch(f"/api/players/{ids[0]}", json={}).status_code == 400
+    assert client.patch(f"/api/players/{ids[0]}",
+                        json={"name": "naniiiiiiiiiii"}).status_code == 200
+    assert client.get(f"/api/players/{ids[0]}").json()["player"]["name"] == "naniiiiiiiiiii"
+    assert client.patch("/api/players/999999", json={"name": "x"}).status_code == 404
+
     # Roster cleanup: preview + delete a governor (admin only).
     assert "count" in client.get("/api/players/prune-preview?days=7").json()
     assert client.delete(f"/api/players/{ids[0]}").status_code == 200

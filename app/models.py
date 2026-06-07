@@ -16,6 +16,13 @@ class PlayerIn(BaseModel):
     rank: Optional[int] = Field(default=None, ge=1, le=5)
 
 
+class PlayerPatch(BaseModel):
+    name: Optional[str] = None
+    governor_id: Optional[str] = None
+    alliance: Optional[str] = None
+    rank: Optional[int] = Field(default=None, ge=1, le=5)
+
+
 class ScanRow(BaseModel):
     name: str
     governor_id: Optional[str] = None
