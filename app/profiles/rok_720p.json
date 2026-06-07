@@ -119,6 +119,8 @@
     ],
     "scroll": [640, 540, 640, 250, 1100],
     "name_region": [285, 105, 300, 40],
+    "profile_name_region": [464, 168, 220, 42],
+    "_profile_name_help": "The governor NAME on the PROFILE screen: large bold white text just below the 'Governor (ID: ...)' line, with no alliance tag. Cleanest name source. Calibrated from a 1280x720 profile frame (TheBodyguard).",
     "id_region": [465, 148, 215, 28],
     "_id_region_help": "Governor ID on the PROFILE screen: the 'Governor (ID: NNNNNNNN)' line just above the name. Box spans the whole label; parse_int pulls the digits. Calibrated from a clean 1280x720 profile frame (ID 58509816).",
     "title_region": [360, 40, 560, 55],

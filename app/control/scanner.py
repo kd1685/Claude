@@ -12,8 +12,9 @@ from .adapter import ActionResult
 
 import re
 
-# Leading alliance tag like "[WW85] Name" or "(WW85) Name".
-_TAG_RE = re.compile(r"^\s*[\[\(]\s*([A-Za-z0-9]{2,4})\s*[\]\)]\s*(.+)$")
+# Leading alliance tag like "[WW85] Name". The opening bracket is optional
+# because OCR frequently drops it (reading "WW85] Name").
+_TAG_RE = re.compile(r"^\s*[\[\(]?\s*([A-Za-z0-9]{2,5})\s*[\]\)]\s*(.+)$")
 
 
 def _split_alliance(raw: str):
@@ -194,6 +195,7 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
     rows_cfg = cfg["rows"]
     labels = cfg.get("labels", {})
     name_region = cfg.get("name_region")
+    profile_name_region = cfg.get("profile_name_region")   # clean name on profile
     id_region = cfg.get("id_region")          # Governor ID on the profile screen
     title_region = cfg.get("title_region", [360, 40, 560, 55])
     scroll = cfg.get("scroll", [640, 540, 640, 250, 1100])
@@ -212,21 +214,24 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
         for rc in rows_cfg:                       # open every visible box, in order
             if len(seen) >= count or _stop(adapter):
                 break
+            # A real row always has a power value; use that (not the flaky name)
+            # to tell a genuine row from a blank position past the list end.
+            val = ocr.read_int_region(png, rc["value"]) if rc.get("value") else None
             listname = ocr.read_name_region(png, rc["name"]) if rc.get("name") else ""
             alliance, listname = _split_alliance(listname)
             nkey = ocr._norm(listname)
-            if not nkey:
+            if val is None and not nkey:
                 continue                          # blank row position (past list end)
-            if nkey in seen_keys:
+            if nkey and nkey in seen_keys:
                 continue                          # overlap row we already did — skip cheaply
-            if own and own in nkey:
+            if own and nkey and own in nkey:
                 seen_keys.add(nkey)
                 continue                          # our own account
 
-            val = ocr.read_int_region(png, rc["value"]) if rc.get("value") else None
             driver.tap(int(rc["tap"][0]), int(rc["tap"][1]))
             time.sleep(1.4)
-            # Profile screen: Governor ID + clean labelled Power / Kill Points.
+            # Profile screen: Governor ID, the clean bold NAME, and labelled
+            # Power / Kill Points.
             ppng = driver.screencap()
             gid = ocr.read_int_region(ppng, id_region) if id_region else None
             gkey = str(gid) if gid else ""
@@ -236,6 +241,7 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
                 png = driver.screencap()
                 continue
 
+            pname = ocr.read_name_region(ppng, profile_name_region) if profile_name_region else ""
             row = dict(ocr.read_labeled_values(ppng, labels))
             try:
                 adapter.run_macro("open_more_info", {})
@@ -246,8 +252,9 @@ def scan_profiles_via_adb(adapter, *, count: int) -> ActionResult:
             row.update(ocr.read_labeled_values(mpng, labels))   # adds deads etc.
             if gkey:
                 row["governor_id"] = gkey
-            row["name"] = listname or (ocr.read_name_region(mpng, name_region)
-                                       if name_region else "")
+            # Name priority: clean profile-screen name > rankings-list name > More Info.
+            row["name"] = (pname or listname
+                           or (ocr.read_name_region(mpng, name_region) if name_region else ""))
             if alliance:
                 row["alliance"] = alliance
             if val is not None and not row.get("power"):

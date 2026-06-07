@@ -36,7 +36,7 @@ _load_env(ROOT / "agent" / "agent.env")
 SERVER_URL = os.environ.get("SERVER_URL", "http://localhost:8000").rstrip("/")
 AGENT_TOKEN = os.environ.get("AGENT_TOKEN", "")
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "2"))
-AGENT_VERSION = "2026.06.07d-rowwalk"   # bump on each code change
+AGENT_VERSION = "2026.06.07e-profilename"   # bump on each code change
 
 # Configure the local ADB adapter (via env) before importing the app config.
 os.environ.setdefault("CONTROL_BACKEND", "adb")
