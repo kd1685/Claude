@@ -1,6 +1,0 @@
-# PC agent dependencies (install with: pip install -r agent/requirements.txt)
-requests>=2.28
-pillow>=10.0
-opencv-python>=4.8
-pytesseract>=0.3.10
-numpy>=1.26
