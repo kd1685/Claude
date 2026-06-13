@@ -92,6 +92,8 @@ def _make_key(tier):
     return k
 
 
+# ─── routes + security headers ─────────────────────────────────────────────────────
+
 def test_pages_and_redirects():
     assert client.get("/").status_code == 200
     assert client.get("/app").status_code == 200
@@ -117,6 +119,8 @@ def test_social_meta_present():
     assert 'og:image' in s and 'twitter:card' in s
 
 
+# ─── auth + tiers + entitlements ──────────────────────────────────────────────────
+
 def test_tier_gates():
     obs = _make_key("observer")
     assert client.get("/api/bots").status_code in (401, 403)
@@ -135,8 +139,10 @@ def test_bot_ownership_and_allowance():
         ids.append(r.json()["bot"]["id"])
     r = client.post("/api/bots/create", headers=H, json={"kind": "trend"})
     assert r.status_code == 422 and "allowance" in r.json()["detail"]
+    # cross-key control blocked; owner sees all
     assert client.delete("/api/bots/trend", headers=H).status_code == 403
     assert len(client.get("/api/bots", headers=OWNER).json()["bots"]) >= 5
+    # add-on raises the cap
     assert billing._addon_apply(key_gen._digest(arch), "bots", +1)
     _force_auth_reload()
     assert client.get("/api/bots", headers=H).json()["allowance"] == 5
@@ -163,6 +169,8 @@ def test_ai_quota_math():
     assert limit == appmod.AI_QUOTA["architect"] + 50
 
 
+# ─── webhooks refuse safely when unconfigured ────────────────────────────────────
+
 def test_billing_webhooks_unconfigured():
     assert client.post("/api/whop-webhook", json={}).status_code == 503
     assert client.post("/api/stripe-webhook", json={}).status_code == 503
@@ -173,16 +181,21 @@ def test_register_validation():
     assert client.post("/api/register", json={"email": "junk"}).status_code == 422
 
 
+# ─── alerts, levels, exits ──────────────────────────────────────────────────────
+
 def test_levels_and_exit_watch():
     client.post("/api/tv-webhook", json={"symbol": "BTC_USDT", "action": "BUY",
                                          "price": 65000, "tp": 68000, "sl": 63000})
+    # drag commit
     r = client.post("/api/levels/BTC_USDT", headers=OWNER, json={"tp": 69000, "sl": 63000})
     assert r.status_code == 200
     d = client.get("/api/tv-alerts/BTC_USDT", headers=OWNER).json()
     assert d["levels"]["tp"] == 69000
     assert d["alerts"][0]["action"] == "ADJUST"
+    # validation + gating
     assert client.post("/api/levels/BTC_USDT", headers=OWNER, json={}).status_code == 422
     assert client.post("/api/levels/BTC_USDT", json={"tp": 1}).status_code == 401
+    # exit watcher: arm → drag-sync → TP cross fires through the bridge
     r = client.post("/api/exits", headers=OWNER_X,
                     json={"symbol": "BTC_USDT", "qty": 0.001, "tp": 68000,
                           "sl": 63000, "live": False})
@@ -200,6 +213,8 @@ def test_levels_and_exit_watch():
                        json={"symbol": "X_USDT", "qty": 1, "tp": 2}).status_code == 403
 
 
+# ─── live tape ────────────────────────────────────────────────────────────────────
+
 def test_orderflow_and_liquidations():
     r = client.get("/api/orderflow/BTC_USDT", headers=OWNER)
     assert r.status_code == 200 and "whale" in r.json()["trades"]
@@ -212,6 +227,8 @@ def test_orderflow_and_liquidations():
     assert s["asset"]["m5"]["long_usd"] >= 1_000_000
     assert client.get("/api/liquidations").status_code == 401
 
+
+# ─── scoring engine consistency (edge_lab fast path == live panel) ─────────────────
 
 def test_vote_matrix_matches_compute_panel():
     import indicators
@@ -230,21 +247,25 @@ def test_vote_matrix_matches_compute_panel():
     assert abs(manual - p["score"]) < 0.011
 
 
+# ─── GDPR / privacy layer ─────────────────────────────────────────────────────
+
 def test_emails_encrypted_at_rest_and_unsubscribe():
     import privacy, store_db
     assert privacy.encrypted(), "DATA_KEY must be set in tests"
     addr = "alice@example.com"
     client.post("/api/register", json={"email": addr})
     raw = store_db.load_kv("register_list") or ""
-    assert addr not in raw and "alice" not in raw
-    assert addr in privacy.list_addresses()
+    assert addr not in raw and "alice" not in raw          # nothing readable on disk
+    assert addr in privacy.list_addresses()                # but sendable when needed
+    # owner endpoint shows count only — never addresses
     r = client.get("/api/register-list", params={"key": "TEST-OWNER-KEY"})
     assert r.status_code == 200 and "emails" not in r.json() and r.json()["count"] >= 1
+    # unsubscribe removes + permanently suppresses
     r = client.post("/api/gdpr/unsubscribe", json={"email": addr})
     assert r.status_code == 200
     assert addr not in privacy.list_addresses()
-    client.post("/api/register", json={"email": addr})
-    assert addr not in privacy.list_addresses()
+    client.post("/api/register", json={"email": addr})     # tries to come back
+    assert addr not in privacy.list_addresses()            # suppression holds
 
 
 def test_billing_stores_no_plaintext_email(monkeypatch):
@@ -258,6 +279,7 @@ def test_billing_stores_no_plaintext_email(monkeypatch):
     assert sent["to"] == addr and "/privacy-tools" in sent["body"]
     raw_map = store_db.load_kv("billing_stripe_sub_priv1") or ""
     assert addr not in raw_map and "buyer" not in raw_map
+    # key note carries a tag, not the email
     db = key_gen._load()
     rec = [r for r in db.values() if "stripe:sub_priv1" in str(r.get("note",""))][0]
     assert addr not in rec["note"]
@@ -272,10 +294,13 @@ def test_full_erasure_flow(monkeypatch):
     addr = "leaver@example.com"
     billing._fulfil("stripe", "sub_gone1", addr, "observer")
     client.post("/api/register", json={"email": addr})
+    # step 1: request → confirmation email with a signed link
     r = client.post("/api/gdpr/erase", json={"email": addr})
     assert r.status_code == 200 and "erase-confirm?t=" in sent["body"]
     token = sent["body"].split("erase-confirm?t=")[1].split()[0]
+    # tampered/expired tokens fail
     assert client.get("/api/gdpr/erase-confirm", params={"t": token[:-4] + "AAAA"}).status_code == 400
+    # step 2: confirm → keys revoked, maps gone, mailing gone, suppressed
     r = client.get("/api/gdpr/erase-confirm", params={"t": token})
     assert r.status_code == 200 and "erased" in r.text
     _force_auth_reload()
@@ -285,14 +310,19 @@ def test_full_erasure_flow(monkeypatch):
     assert privacy.is_suppressed(privacy.tag(addr))
 
 
+# ─── Terms acceptance + finalized legal pages ──────────────────────────────────
+
 def test_terms_acceptance_flow():
     import store_db, app as A
+    # /api/check advertises the current terms version
     r = client.get("/api/check", params={"key": "TEST-OWNER-KEY"})
     assert r.json()["terms_version"] == A.TERMS_VERSION
+    # acceptance needs a valid key
     assert client.post("/api/accept-terms", json={}).status_code in (401, 403)
     r = client.post("/api/accept-terms", headers=OWNER,
                     json={"version": A.TERMS_VERSION})
     assert r.status_code == 200
+    # recorded server-side against the hashed key id, with version + timestamp
     import auth as _a, json as _j
     h16 = _a.verify("TEST-OWNER-KEY")["hash16"]
     rec = _j.loads(store_db.load_kv(f"tos_{h16}"))
@@ -300,10 +330,12 @@ def test_terms_acceptance_flow():
 
 
 def test_legal_pages_finalized():
+    # consent control present on the lock screen
     app_html = client.get("/app").text
     assert 'id="tosChk"' in app_html and "/legal/terms" in app_html
+    # finalized content: carve-outs in, draft stamps out
     terms = client.get("/legal/terms").text
-    assert "fraudulent misrepresentation" in terms
+    assert "fraudulent misrepresentation" in terms          # liability carve-out
     assert "Version 2026-06-12" in terms
     for page in ("terms", "privacy", "disclaimer"):
         t = client.get(f"/legal/{page}").text
@@ -311,29 +343,39 @@ def test_legal_pages_finalized():
         assert "mrpacstar" not in t and "support@ascentterminal.com" in t
 
 
+# ─── per-user order caps ────────────────────────────────────────────────────────
+
 def test_per_user_order_caps():
     import app as A
     op = _make_key("operator")
     H = {"X-Access-Key": op, "X-Execute-Key": "TEST-XKEY"}
+    # default: inherits server ceiling (env unset in tests → 1000 default)
     r = client.get("/api/user-cap", headers={"X-Access-Key": op})
     assert r.status_code == 200 and r.json()["server_ceiling"] == A.EXEC_MAX_USD
+    # user sets a personal $100 cap
     r = client.post("/api/user-cap", headers={"X-Access-Key": op}, json={"max_usd": 100})
     assert r.status_code == 200 and r.json()["effective"] == 100
+    # a $150 paper order from THIS key is refused by THEIR cap
     r = client.post("/api/tv-execute", headers=H,
                     json={"symbol": "BTC_USDT", "side": "BUY", "quote_amount": 150,
                           "price": 100.0, "dry_run": True, "execute_key": "TEST-XKEY"})
     assert r.status_code == 200
     d = r.json()["result"]
     assert d["status"] == "error" and "cap" in d["detail"].lower(), d
+    # $50 passes
     r = client.post("/api/tv-execute", headers=H,
                     json={"symbol": "BTC_USDT", "side": "BUY", "quote_amount": 50,
                           "price": 100.0, "dry_run": True, "execute_key": "TEST-XKEY"})
     assert r.json()["result"]["status"] == "ok"
+    # user cap above the server ceiling is clamped by the ceiling
     client.post("/api/user-cap", headers={"X-Access-Key": op},
                 json={"max_usd": A.EXEC_MAX_USD + 5000})
     assert client.get("/api/user-cap", headers={"X-Access-Key": op}).json()["effective"] == A.EXEC_MAX_USD
+    # validation
     assert client.post("/api/user-cap", headers={"X-Access-Key": op}, json={"max_usd": "x"}).status_code == 422
 
+
+# ─── Whop V1 event names ────────────────────────────────────────────────────────────
 
 def test_whop_v1_events(monkeypatch):
     import billing, hmac as _h, hashlib as _hl, json as _j
@@ -350,22 +392,28 @@ def test_whop_v1_events(monkeypatch):
                            headers={"X-Whop-Signature": sig,
                                     "Content-Type": "application/json"})
 
+    # V1 activation issues a key at the tier found in the plan title
     r = signed({"action": "membership_activated",
                 "data": {"id": "mem_v1_1", "user": {"email": "w@example.com"},
                          "plan": {"title": "Ascent Operator Monthly"}}})
     assert r.status_code == 200 and sent["to"] == "w@example.com"
+    # V1 invoice_paid renews without error
     assert signed({"action": "invoice_paid",
                    "data": {"membership_id": "mem_v1_1"}}).status_code == 200
+    # V1 deactivation revokes (and is not mistaken for activation)
     r = signed({"action": "membership_deactivated", "data": {"id": "mem_v1_1"}})
     assert r.status_code == 200
     import store_db
     assert store_db.load_kv("billing_whop_mem_v1_1") is None
+    # bad signature refused
     raw = b"{}"
     r = client.post("/api/whop-webhook", content=raw,
                     headers={"X-Whop-Signature": "deadbeef",
                              "Content-Type": "application/json"})
     assert r.status_code == 401
 
+
+# ─── payment-failed courtesy email ───────────────────────────────────────────────
 
 def test_payment_trouble_notice(monkeypatch):
     import billing, hmac as _h, hashlib as _hl, json as _j
@@ -386,14 +434,18 @@ def test_payment_trouble_notice(monkeypatch):
             "data": {"id": "mem_pd1", "user": {"email": "pd@example.com"},
                      "plan": {"title": "Observer"}}})
     sent.clear()
+    # past-due → one courtesy email to the right customer, key NOT revoked
     r = signed({"action": "invoice_past_due", "data": {"membership_id": "mem_pd1"}})
     assert r.status_code == 200 and r.json().get("notified") is True
     assert sent and sent[0][0] == "pd@example.com" and "payment" in sent[0][1].lower()
     import store_db
-    assert store_db.load_kv("billing_whop_mem_pd1") is not None
+    assert store_db.load_kv("billing_whop_mem_pd1") is not None   # still subscribed
+    # dunning retry within 3 days → throttled, no second email
     r = signed({"action": "invoice_past_due", "data": {"membership_id": "mem_pd1"}})
     assert r.json().get("throttled") is True and len(sent) == 1
 
+
+# ─── vanity redirects ──────────────────────────────────────────────────────────────
 
 def test_vanity_redirects():
     r = client.get("/patreon", follow_redirects=False)
@@ -402,6 +454,8 @@ def test_vanity_redirects():
     assert r.status_code == 302 and "whop.com" in r.headers["location"]
     r = client.get("/twitter", follow_redirects=False)
     assert r.status_code == 302 and "x.com" in r.headers["location"]
+    # discord 404s until SOCIAL_DISCORD is configured
     assert client.get("/discord", follow_redirects=False).status_code == 404
+    # regression: literal routes must not shadow real pages
     assert client.get("/privacy-tools").status_code == 200
     assert client.get("/legal/terms").status_code == 200
