@@ -170,7 +170,7 @@ place native exchange TP/SL orders (that remains roadmap item 12).
 ────────────────────────────────────────────────────────────────────
 platform/exits.py + /api/exits endpoints + UI. Tick "🛡 watch TP/SL
 after fill" in the ⚡ Execute panel: after a BUY fills, the server
-watches price (~10s) and market-SELLs the filled amount through the
+watches price (~10s) and market-SELLS the filled amount through the
 execution bridge (every gate intact) the moment TP or SL is touched.
 Dragging the chart TP/SL lines moves the ARMED triggers live (the
 drag warning says so). New "Protective exits" card on the Alerts tab
