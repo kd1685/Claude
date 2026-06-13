@@ -1,90 +1,77 @@
-# Ascent Terminal — Windows kit
+# Ascent Terminal — Windows Kit
 
-What's in this folder and how to get started on a Windows PC.
-
----
-
-## Quick start (3 steps)
-
-1. **Run `organise.bat`** — sets up the `platform/` folder,
-   copies scripts, writes starter `.env` and `requirements.txt`.
-
-2. **Fill in `platform\.env`** — add your MEXC API key/secret
-   and Telegram credentials.
-
-3. **Double-click `platform\run_bot.bat`** — starts the scalper.
-
-For the full checklist see `GO_LIVE_STEPS.md`.
+Everything you need to run Ascent Terminal on a Windows 10/11 machine.
 
 ---
 
-## Files in this kit
+## Quick start
 
-| File / folder | Purpose |
-|---|---|
-| `organise.bat` | One-click setup |
-| `UPDATE.bat` | Pull latest code + upgrade packages |
-| `GO_LIVE_STEPS.md` | Step-by-step go-live guide |
-| `HANDOFF.md` | Full project overview |
-| `UPDATE_NOTES.md` | Change log |
-| `LAUNCH_PLAN.txt` | Phased rollout plan |
-| `WHAT_TO_DO_NOW.txt` | Cheat-sheet for right now |
-| `bots/scalper_bot.py` | 1-min scalper (main bot) |
-| `brain/mexc_trend_bot.py` | Daily trend-follower |
-| `brain/edge_lab.py` | Parameter research tool |
-| `brain/swing_backtest.py` | Swing-trade backtester |
-| `brain/RUN_EDGE_LAB.bat` | Launcher for edge_lab |
+1. **Install Python 3.11+** from https://python.org (tick "Add to PATH")
+2. **Clone or download** this repository
+3. **Double-click `UPDATE.bat`** — it installs all dependencies and checks your environment
+4. **Fill in `.env`** with your MEXC API keys and licence key (see below)
+5. **Double-click `bots/scalper_bot.py`** — or run `python bots/scalper_bot.py` in a terminal
 
 ---
 
-## Python version
+## What each `.bat` file does
 
-Use **Python 3.10 or newer**.
-Download from https://www.python.org/downloads/
-Tick "Add Python to PATH" during install.
+| File | Purpose |
+|------|---------|
+| `UPDATE.bat` | Pulls latest code from GitHub, installs/upgrades pip deps |
+| `organise.bat` | Housekeeping — cleans `__pycache__`, old logs, temp files |
+| `brain/RUN_EDGE_LAB.bat` | Runs the full back-test suite (`brain/edge_lab.py`) |
+| `forward/forward_paper.bat` | Runs the paper-trade forward test |
+| `tools/DEPLOY_TO_VPS.bat` | Deploys latest code to your VPS via SCP |
+| `tools/GENERATE_SECRETS.bat` | Generates a new `SECRET_KEY` for `.env` |
+| `tools/NEW_KEY.bat` | Creates a new subscriber licence key |
+| `tools/REVOKE_KEY.bat` | Revokes a subscriber licence key |
+| `tools/RUN_TESTS.bat` | Runs the test suite |
+| `tools/TEST_DISCORD_WEBHOOK.bat` | Sends a test message to your Discord #alerts channel |
 
 ---
 
-## Installing dependencies
+## Environment variables
 
-After running `organise.bat`:
+Create a file called `.env` in the root of this repository (copy from `.env.example`):
 
 ```
-cd platform
-pip install -r requirements.txt
+MEXC_API_KEY=your_mexc_api_key
+MEXC_SECRET_KEY=your_mexc_secret_key
+LICENCE_KEY=your_ascent_terminal_licence_key
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+SERVER_URL=https://ascent-terminal.com
 ```
 
-Packages installed: `ccxt`, `python-dotenv`, `requests`,
-`pandas`, `numpy`, `ta`
-
 ---
 
-## Telegram setup (5 min)
+## Running the back-tests
 
-1. Open Telegram, search **@BotFather**
-2. `/newbot` → follow prompts → copy the token
-3. Send any message to your new bot
-4. Visit `https://api.telegram.org/bot<TOKEN>/getUpdates`
-5. Copy the `id` field under `chat` — that's your chat id
+```bat
+brain\RUN_EDGE_LAB.bat
+```
 
----
+Or from a terminal:
+```bash
+python brain/edge_lab.py --symbol BTCUSDT --days 90
+```
 
-## MEXC API setup
-
-1. Log in to mexc.com
-2. Profile → API Management → Create API Key
-3. Permissions: **Read** + **Trade** (Futures)
-4. Copy key and secret into `platform\.env`
-5. Do **not** enable withdrawal permission
+Results are saved to `brain/results/`.
 
 ---
 
 ## Troubleshooting
 
 | Problem | Fix |
-|---|---|
-| `pip` not found | Re-install Python with "Add to PATH" ticked |
-| `ModuleNotFoundError` | Run `pip install -r requirements.txt` again |
-| No Telegram messages | Check token and chat id in `.env` |
-| MEXC auth error | Re-generate API key, paste carefully |
-| Bot opens and closes instantly | Right-click bat → Run as Administrator |
+|---------|-----|
+| `python` not found | Re-install Python 3.11+ and tick "Add to PATH" |
+| `ModuleNotFoundError` | Run `UPDATE.bat` to reinstall dependencies |
+| Bot won't connect | Check MEXC API key permissions (Futures read + trade) |
+| Licence invalid | Check `SERVER_URL` in `.env`; contact support |
+| Discord alerts not working | Re-run `tools/TEST_DISCORD_WEBHOOK.bat` to diagnose |
+
+---
+
+## Support
+
+Join the Discord server (link in your Whop / Patreon membership area) and post in #support.

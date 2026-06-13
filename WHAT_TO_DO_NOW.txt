@@ -1,79 +1,79 @@
-# ✅ WHAT TO DO NOW — owner runbook (post-upgrade)
+WHAT TO DO NOW — ASCENT TERMINAL
+==================================
+Prioritised next-actions list (update as you complete tasks)
 
-You've just received the v3.0 upgrade of Ascent Terminal.
-Here's exactly what to do next, in order.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PRIORITY 1 — MUST DO BEFORE LAUNCH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-──────────────────────────────────────────────────
- RIGHT NOW  (today, ~15 min)
-──────────────────────────────────────────────────
+  [ ] 1. Buy domain ascent-terminal.com
+        → Go to Namecheap / Cloudflare Registrar
+        → Point A record to your VPS IP
 
-1. Pull the latest code
-   git pull
-   (or double-click UPDATE.bat if git pull doesn't work alone)
+  [ ] 2. Provision VPS
+        → DigitalOcean Droplet $12/mo (2 vCPU / 4 GB)
+        → Ubuntu 22.04 LTS
+        → SSH in and run the setup commands in GO_LIVE_STEPS.md §0
 
-2. Run the organiser
-   Double-click  organise.bat
-   It will create the platform/ folder and copy all scripts.
+  [ ] 3. Fill in .env
+        → MEXC API key (Futures: read + trade)
+        → Stripe live keys
+        → Discord bot token + guild ID
+        → Whop API key
 
-3. Open  platform\.env  in Notepad
-   Fill in:
-     MEXC_API_KEY=...
-     MEXC_API_SECRET=...
-     TELEGRAM_BOT_TOKEN=...
-     TELEGRAM_CHAT_ID=...
+  [ ] 4. Run end-to-end smoke test (GO_LIVE_STEPS.md §6)
+        → API health check
+        → Paper-trade forward test
+        → Discord webhook test
+        → Stripe test checkout
 
-   If you don't have a Telegram bot yet:
-     → Open Telegram → search @BotFather → /newbot
+  [ ] 5. Compile Windows installer
+        → Install Inno Setup 6 from jrsoftware.org
+        → Open installer/AscentTerminal.iss
+        → Build → test install on a clean Windows VM
 
-4. Install dependencies (if not already done)
-   Open a terminal in  platform/
-   pip install -r requirements.txt
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PRIORITY 2 — LAUNCH WEEK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-5. Start the scalper in PAPER mode
-   Double-click  platform\run_bot.bat
-   — or —
-   cd platform
-   python bots/scalper_bot.py
+  [ ] 6. Enable Whop listing
+        → Use prompts from whop_patreon/whop_ai_prompts.md
+        → Set price: $49/mo, $399/yr
+        → Upload bot screenshot + equity curve
 
-   You should see Telegram messages within a few minutes.
-   They will say [PAPER] — that means no real money.
+  [ ] 7. Enable Patreon tiers
+        → Use prompts from whop_patreon/patreon_setup_prompts.md
+        → Free / Trader ($19) / Pro ($49)
+        → Link Discord server
 
-──────────────────────────────────────────────────
- THIS WEEK
-──────────────────────────────────────────────────
+  [ ] 8. Post launch content
+        → r/algotrading: back-test thread
+        → Twitter/X: equity curve screenshot
+        → Discord DMs to 20 target traders
 
-□ Let the paper bot run for 24-48 h — check the logs
-□ Run edge_lab.py to find the best parameters for your symbol
-□ Read GO_LIVE_STEPS.md for the full go-live checklist
-□ Read LAUNCH_PLAN.txt for the phased rollout plan
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PRIORITY 3 — FIRST MONTH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-──────────────────────────────────────────────────
- WHEN READY TO GO LIVE
-──────────────────────────────────────────────────
+  [ ] 9. Onboard 10 paying subscribers
+        → Send welcome email with download link
+        → Add to Discord with role-sync bot
 
-□ Set  PAPER_TRADE=false  in  platform\.env
-□ Set  POSITION_SIZE_USDT=10  (start small)
-□ Restart the bot
-□ Watch first 5 trades carefully
+  [ ] 10. Collect feedback
+         → DM each subscriber after week 1
+         → Fix top 3 pain points
 
-──────────────────────────────────────────────────
- USEFUL COMMANDS
-──────────────────────────────────────────────────
+  [ ] 11. Publish first edge-lab report
+         → Run brain/edge_lab.py on latest 90 days
+         → Write 500-word commentary
+         → Post to Patreon + Discord
 
-  Start scalper:       python bots/scalper_bot.py
-  Start trend bot:     python brain/mexc_trend_bot.py
-  Run research:        python brain/edge_lab.py
-  Run backtest:        python brain/swing_backtest.py
-  Update everything:   double-click UPDATE.bat
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PRIORITY 4 — ONGOING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-──────────────────────────────────────────────────
- FILES TO KNOW
-──────────────────────────────────────────────────
-
-  platform/.env          ← your secrets
-  platform/logs/         ← log files
-  platform/data/         ← trade CSVs
-  GO_LIVE_STEPS.md       ← step-by-step guide
-  LAUNCH_PLAN.txt        ← phased plan
-  HANDOFF.md             ← full project overview
-  UPDATE_NOTES.md        ← what changed in v3.0
+  [ ] Monthly walk-forward revalidation (brain/swing_oos.py)
+  [ ] Weekly Discord content (discord/discord_post_content.py)
+  [ ] Monitor VPS uptime (UptimeRobot free tier)
+  [ ] Review Stripe churn; DM churned subscribers
+  [ ] Quarterly: review pricing vs. competition

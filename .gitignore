@@ -5,4 +5,5 @@ platform/data/
 platform/keys.json
 platform/certs/*.pem
 brain/edge_cache/
-brain/edge_results.csv
+brain/results/
+*.log

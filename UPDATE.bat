@@ -1,49 +1,58 @@
 @echo off
 REM ============================================================
-REM  UPDATE.bat — pull latest code and upgrade pip packages
+REM  ASCENT TERMINAL — UPDATE SCRIPT
+REM  Run this whenever you want to pull the latest version.
 REM ============================================================
 
+title Ascent Terminal — Updater
+color 0A
+
 echo.
-echo ============================================================
-echo  Ascent Terminal — Updater
-echo ============================================================
+echo  ╔══════════════════════════════════════╗
+echo  ║   ASCENT TERMINAL — UPDATE SCRIPT   ║
+echo  ╚══════════════════════════════════════╝
 echo.
 
-REM ── 1. Pull latest from GitHub ──────────────────────────────
-echo [1/3] Pulling latest code from GitHub...
-git pull
+REM ── 1. Pull latest code ─────────────────────────────────────
+echo [1/4] Pulling latest code from GitHub...
+git pull origin main
 if errorlevel 1 (
-    echo.
-    echo  ERROR: git pull failed.
-    echo  Make sure git is installed and you have internet access.
+    echo  ERROR: git pull failed. Check your internet connection.
     pause
     exit /b 1
 )
 echo  Done.
 echo.
 
-REM ── 2. Upgrade pip packages ─────────────────────────────────
-echo [2/3] Upgrading pip packages...
-if exist platform\requirements.txt (
-    pip install --upgrade -r platform\requirements.txt
-) else (
-    pip install --upgrade ccxt python-dotenv requests pandas numpy ta
-)
+REM ── 2. Upgrade pip ──────────────────────────────────────────
+echo [2/4] Upgrading pip...
+python -m pip install --upgrade pip --quiet
+echo  Done.
+echo.
+
+REM ── 3. Install / upgrade dependencies ───────────────────────
+echo [3/4] Installing dependencies...
+pip install -r requirements.txt --quiet
 if errorlevel 1 (
-    echo.
-    echo  WARNING: pip upgrade had errors — check output above.
+    echo  ERROR: pip install failed. See output above.
+    pause
+    exit /b 1
 )
 echo  Done.
 echo.
 
-REM ── 3. Re-run organiser to sync any new scripts ─────────────
-echo [3/3] Syncing scripts via organise.bat...
-call organise.bat
-echo  Done.
+REM ── 4. Check .env exists ────────────────────────────────────
+echo [4/4] Checking environment...
+if not exist .env (
+    echo  WARNING: .env file not found.
+    echo  Copy .env.example to .env and fill in your credentials.
+) else (
+    echo  .env found.
+)
 echo.
 
-echo ============================================================
-echo  Update complete.  You can now start the bot.
-echo ============================================================
+echo  ══════════════════════════════════════
+echo   Update complete! You are up to date.
+echo  ══════════════════════════════════════
 echo.
 pause

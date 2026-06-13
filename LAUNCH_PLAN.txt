@@ -1,91 +1,150 @@
-══════════════════════════════════════════════════
- ASCENT TERMINAL — PHASED LAUNCH PLAN
-══════════════════════════════════════════════════
+ASCENT TERMINAL — LAUNCH PLAN
+==============================
+Last updated: June 2025
 
-This plan takes you from zero to a live, monitored
-algo-trading setup in four phases over ~2 weeks.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 1 — PRODUCT OVERVIEW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-──────────────────────────────────────────────────
-PHASE 1 — Setup & paper trade  (Days 1-3)
-──────────────────────────────────────────────────
-Goal: environment working, bot running in paper mode.
+Product name : Ascent Terminal
+Target market: Retail crypto futures traders (MEXC, non-US)
+Core promise : "A research-grade edge, packaged for real traders."
 
-□ Clone repo on Windows PC
-□ Run organise.bat
-□ Fill in platform/.env  (API keys + Telegram)
-□ pip install -r platform/requirements.txt
-□ Set PAPER_TRADE=true
-□ Start scalper_bot.py — confirm Telegram messages
-□ Start mexc_trend_bot.py in a second terminal
-□ Watch for 24 h — check logs, no errors
+What subscribers get
+--------------------
+  • Desktop trading bot (Windows .exe, PyQt5 GUI)
+  • Live signal alerts in Discord
+  • Access to the brain/ back-test scripts
+  • Monthly edge-lab reports
+  • Priority Discord support
 
-Success criteria
-  • Both bots send Telegram messages
-  • No Python exceptions in logs
-  • Simulated P&L reported correctly
+Pricing
+-------
+  Monthly : $49 / month
+  Annual  : $399 / year  (32% saving)
+  Lifetime: $999 one-off  (planned — Q3 2025)
 
-──────────────────────────────────────────────────
-PHASE 2 — Research & tuning  (Days 4-7)
-──────────────────────────────────────────────────
-Goal: find the best parameters before risking money.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 2 — PRE-LAUNCH CHECKLIST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-□ Run edge_lab.py on BTC/USDT, ETH/USDT, SOL/USDT
-□ Open the output CSV — identify top 3 param combos
-□ Update .env with best RSI_OVERSOLD / RSI_OVERBOUGHT
-□ Run swing_backtest.py on the chosen params
-□ Review the backtest equity curve and drawdown
-□ Decide: is the edge real? (Sharpe > 1.0, DD < 20%)
+  [x] Strategy back-tested and walk-forwarded (brain/)
+  [x] Bot built and manually tested (bots/scalper_bot.py)
+  [x] Server built (server_launcher/ascent_server.py)
+  [x] Legal docs written (legal/)
+  [x] Discord server structured
+  [x] Stripe products created
+  [x] Whop listing drafted
+  [x] Patreon listing drafted
+  [ ] Domain purchased and pointed to VPS
+  [ ] TLS cert obtained
+  [ ] End-to-end smoke test passed (GO_LIVE_STEPS.md §6)
+  [ ] Installer compiled and tested
+  [ ] First 3 beta testers recruited
 
-Success criteria
-  • At least one param set with Sharpe > 1.0
-  • Max drawdown < 20% in backtest
-  • Win rate > 45%
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 3 — MONETISATION CHANNELS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-──────────────────────────────────────────────────
-PHASE 3 — Live micro-test  (Days 8-11)
-──────────────────────────────────────────────────
-Goal: confirm live execution works with tiny size.
+Primary
+-------
+  1. Whop marketplace (highest crypto-trader density)
+     - List under "Trading Tools" category
+     - Use copy from whop_patreon/whop_ai_prompts.md
 
-□ Set PAPER_TRADE=false
-□ Set POSITION_SIZE_USDT=10  (smallest practical size)
-□ Set LEVERAGE=3             (conservative)
-□ Run scalper for 3 days
-□ Compare live fills vs paper signals
-□ Check slippage — is it within 0.05% of signal price?
-□ Confirm stop-losses trigger correctly
+  2. Patreon (recurring community revenue)
+     - Three tiers: Follower (free), Trader ($19), Pro ($49)
+     - Use copy from whop_patreon/patreon_setup_prompts.md
 
-Success criteria
-  • Fills within acceptable slippage
-  • Stop-losses fire correctly
-  • No runaway positions
-  • P&L roughly matches paper expectation
+  3. Direct Stripe checkout (own the relationship)
+     - Linked from ascent-terminal.com
+     - Monthly and annual plans
 
-──────────────────────────────────────────────────
-PHASE 4 — Scale up  (Day 12+)
-──────────────────────────────────────────────────
-Goal: increase size gradually as confidence grows.
+Secondary (Q3 2025)
+-------------------
+  4. Affiliate programme (10% rev-share, tracked via Whop)
+  5. Group mentoring calls ($99/session, Calendly)
+  6. Strategy pack add-ons ($99 one-off per pack)
 
-□ Increase POSITION_SIZE_USDT to 25, then 50
-□ Add mexc_trend_bot.py to live rotation
-□ Run both bots — monitor for conflicts / over-trading
-□ Set a monthly loss limit: if down > 15%, stop & review
-□ Review trades CSV weekly — is edge holding?
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 4 — TRAFFIC / GROWTH PLAN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Scale-up schedule (suggested)
-  Week 1:  $10/trade  — prove execution
-  Week 2:  $25/trade  — build confidence
-  Week 3:  $50/trade  — normal operating size
-  Month 2: $100/trade — only if Week 3 was profitable
+Week 1–2 (pre-launch buzz)
+  • Post 3 back-test result threads on r/algotrading, r/CryptoCurrency
+  • Share equity curve screenshots on Twitter/X with #MEXC #AlgoTrading
+  • DM 20 active traders in target Discord servers
+  • Seed Whop listing with 3 beta-tester reviews
 
-──────────────────────────────────────────────────
-RISK RULES (non-negotiable)
-──────────────────────────────────────────────────
-  • Never risk more than 2% of account per trade
-  • Never run leverage > 10x
-  • Always keep PAPER_TRADE=true until Phase 3
-  • Keep API key withdrawal permission OFF
-  • Review logs daily for the first month
+Week 3–4 (launch week)
+  • "We're live" post across all channels
+  • Launch discount: first 20 subscribers get 20% off for life
+  • YouTube short: 60-sec demo of the bot placing a live trade
+  • Pin Whop listing to top of niche communities
 
-══════════════════════════════════════════════════
- END OF LAUNCH PLAN
-══════════════════════════════════════════════════
+Ongoing (monthly)
+  • Edge-lab report → Patreon post → teaser on Twitter
+  • One Discord AMA per month
+  • Weekly signal recap posted to free tier
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 5 — REVENUE PROJECTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Month 1:  10 subscribers × $49 = $490 MRR
+  Month 3:  30 subscribers × $49 = $1,470 MRR
+  Month 6:  75 subscribers × $49 = $3,675 MRR
+  Month 12: 150 subscribers × $49 = $7,350 MRR
+
+  Annual target (conservative): $50,000 ARR
+  Annual target (base case):    $88,000 ARR
+
+Note: figures exclude annual plan conversions (+32% per seat) and
+one-off lifetime / add-on sales.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 6 — RISK REGISTER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Risk                          Likelihood  Impact  Mitigation
+  ─────────────────────────────────────────────────────────────
+  MEXC API changes              Medium      High    Abstract API calls; monitor changelog
+  Strategy stops working        Medium      High    Monthly walk-forward revalidation
+  Stripe bans account           Low         High    Keep Whop as fallback payment layer
+  Discord bot loses permissions  Low         Medium  Document re-invite steps in HANDOFF
+  VPS goes down                 Low         Medium  UptimeRobot alerts; 1-click redeploy
+  Legal challenge (signal svc)  Low         Medium  DISCLAIMER.md; "educational only" framing
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 7 — 90-DAY ACTION PLAN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Week 1
+  ✦ Buy domain, point to VPS
+  ✦ Complete GO_LIVE_STEPS.md checklist
+  ✦ Recruit 3 beta testers from existing network
+
+Week 2
+  ✦ Beta test with real keys + Stripe test mode
+  ✦ Fix any bugs found
+  ✦ Compile and test Windows installer
+
+Week 3
+  ✦ Flip listings to Live on Whop + Patreon
+  ✦ Launch post blitz (see §4)
+  ✦ First revenue
+
+Week 4–8
+  ✦ Onboard first 10 paying subscribers
+  ✦ Weekly check-in with each; gather feedback
+  ✦ Iterate on bot UX based on feedback
+
+Month 3
+  ✦ Monthly edge-lab report
+  ✦ Introduce annual plan
+  ✦ Begin affiliate recruitment
+
+Month 6
+  ✦ Review strategy performance; retrain if needed
+  ✦ Launch lifetime deal to existing subscriber base
+  ✦ Consider second exchange (Bybit / Binance)

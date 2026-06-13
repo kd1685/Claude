@@ -1,110 +1,199 @@
-# Ascent Terminal — Project Handoff (current as of June 2025)
+# HANDOFF — Ascent Terminal
 
-## What this repo is
-
-A personal algorithmic-trading toolkit for MEXC Futures.
-It replaces the old ROK-coin bot with three independent scripts
-that can run simultaneously or stand-alone.
+> Document for any developer (or future-you) picking this project up cold.
 
 ---
 
-## Folder layout (after organise.bat runs)
+## What is Ascent Terminal?
+
+Ascent Terminal is a **subscription-gated algorithmic-trading toolkit** for MEXC Futures.
+
+It has three layers:
+
+| Layer | What it does |
+|-------|--------------|
+| **Research / Brain** | Back-tests and walk-forward scripts (`brain/`) that find edges |
+| **Live bot** | A PyQt5 desktop app (`bots/scalper_bot.py`) that runs the winning strategy in real time |
+| **Platform** | A Flask web server (`server_launcher/ascent_server.py`) that handles auth, Stripe payments, licence keys, and Discord role-sync |
+
+---
+
+## Repository layout
 
 ```
-Claude/
-├── organise.bat          ← run this first on a new PC
-├── UPDATE.bat            ← git-pull + pip upgrade in one click
-├── GO_LIVE_STEPS.md      ← step-by-step checklist
-├── HANDOFF.md            ← this file
-├── UPDATE_NOTES.md       ← version history / change log
-├── WHAT_TO_DO_NOW.txt    ← quick-start cheat-sheet
-├── README_WINDOWS_KIT.md ← Windows-specific setup notes
-├── LAUNCH_PLAN.txt       ← phased go-live plan
+.
+├── .gitignore
+├── GO_LIVE_STEPS.md        ← step-by-step launch guide
+├── HANDOFF.md              ← this file
+├── LAUNCH_PLAN.txt         ← marketing / monetisation plan
+├── README_WINDOWS_KIT.md   ← how to run everything on Windows
+├── UPDATE.bat              ← one-click update script (Windows)
+├── UPDATE_NOTES.md         ← changelog / release notes
+├── WHAT_TO_DO_NOW.txt      ← prioritised next-actions list
+├── organise.bat            ← repo housekeeping script
 │
 ├── bots/
-│   └── scalper_bot.py    ← 1-min scalper (main income bot)
+│   └── scalper_bot.py      ← main live-trading GUI bot
 │
 ├── brain/
-│   ├── mexc_trend_bot.py ← daily trend-follower
-│   ├── edge_lab.py       ← research / parameter scanner
-│   ├── swing_backtest.py ← swing-trade backtester
-│   └── RUN_EDGE_LAB.bat  ← launcher for edge_lab
+│   ├── edge_lab.py         ← multi-strategy back-test harness
+│   ├── mexc_trend_bot.py   ← trend-following strategy + live runner
+│   ├── swing_backtest.py   ← swing strategy back-test
+│   ├── swing_oos.py        ← out-of-sample validation
+│   ├── swing_oos_wide.py   ← wider-parameter OOS sweep
+│   ├── swing_oos_wide-edit.py
+│   ├── swing_voltarget.py  ← volatility-targeting overlay
+│   └── RUN_EDGE_LAB.bat    ← Windows launcher
 │
-└── platform/             ← created by organise.bat
-    ├── .env              ← YOUR secrets (never commit)
-    ├── requirements.txt
-    ├── run_bot.bat
-    ├── bots/             ← copy of bots/
-    ├── brain/            ← copy of brain/
-    ├── data/             ← trade CSVs (git-ignored)
-    └── logs/             ← log files  (git-ignored)
+├── discord/
+│   ├── add_alerts_channel.py
+│   ├── discord_post_content.py
+│   ├── discord_role_sync.py
+│   ├── role_sync_setup.bat
+│   └── PATREON_DISCORD_SETUP.md
+│
+├── forward/
+│   ├── ascent-forward.service  ← systemd unit
+│   ├── forward_paper.py        ← paper-trade forward test
+│   ├── forward_paper.bat
+│   └── forward_state.json
+│
+├── installer/
+│   └── AscentTerminal.iss  ← Inno Setup installer script
+│
+├── legal/
+│   ├── DISCLAIMER.md
+│   ├── PRIVACY.md
+│   └── TERMS.md
+│
+├── server_launcher/
+│   └── ascent_server.py    ← Flask app (auth, payments, keys)
+│
+├── tools/
+│   ├── DEPLOY_TO_VPS.bat
+│   ├── GENERATE_SECRETS.bat
+│   ├── NEW_KEY.bat
+│   ├── REVOKE_KEY.bat
+│   ├── RUN_TESTS.bat
+│   └── TEST_DISCORD_WEBHOOK.bat
+│
+└── whop_patreon/
+    ├── REBRAND_COPY.md
+    ├── patreon_setup_prompts.md
+    └── whop_ai_prompts.md
 ```
 
 ---
 
-## The three scripts
+## Key design decisions
 
-### 1. `bots/scalper_bot.py` — 1-minute scalper
-* Trades MEXC USDT-M futures on a symbol of your choice (default BTC/USDT)
-* Signal: EMA-cross + RSI confirmation
-* Has full paper-trade mode (`PAPER_TRADE=true` in .env)
-* Sends every signal and fill to Telegram
-* Writes a trade log to `platform/data/trades.csv`
+### Why PyQt5 for the bot?
+The target users are retail traders on Windows. A desktop GUI is more familiar than a CLI and doesn't require them to manage a server.
 
-### 2. `brain/mexc_trend_bot.py` — daily trend-follower
-* Longer time-frame bot (4 h / daily candles)
-* Uses ADX + EMA trend filter + ATR-based stops
-* Good complement to the scalper — different market regimes
-* Same .env credentials, same Telegram channel
+### Why Flask (not FastAPI)?
+Simplicity. The server has ~10 endpoints. Flask's zero-magic routing is easier to audit quickly.
 
-### 3. `brain/edge_lab.py` — research tool
-* NOT a live bot — scans symbols and parameter combos
-* Scores each combo by Sharpe / win-rate / profit-factor
-* Outputs a ranked CSV you can inspect before going live
-* Run via `brain/RUN_EDGE_LAB.bat` or directly:
-  `python brain/edge_lab.py`
+### Why MEXC?
+Highest leverage limits available to non-US users (up to 200×), decent API, and the target community already uses it.
+
+### Licence-key model
+Keys are UUIDs stored in `platform/keys.json`. On each bot startup the key is validated against the server (`/api/validate`). The server checks Stripe/Whop membership status before returning OK.
 
 ---
 
-## Key environment variables (.env)
+## Data flow
 
-| Variable | Purpose | Default |
-|---|---|---|
-| MEXC_API_KEY | MEXC API key | — |
-| MEXC_API_SECRET | MEXC API secret | — |
-| TELEGRAM_BOT_TOKEN | Telegram bot token | — |
-| TELEGRAM_CHAT_ID | Your Telegram chat id | — |
-| SYMBOL | Futures symbol | BTC/USDT:USDT |
-| POSITION_SIZE_USDT | $ per trade | 20 |
-| LEVERAGE | Futures leverage | 5 |
-| TP_PCT | Take-profit % | 0.8 |
-| SL_PCT | Stop-loss % | 0.4 |
-| PAPER_TRADE | true = no real orders | true |
-
----
-
-## Workflow for a new PC
-
-1. `git clone https://github.com/kd1685/Claude.git`
-2. Double-click `organise.bat`
-3. Fill in `platform/.env`
-4. `pip install -r platform/requirements.txt`
-5. Double-click `platform/run_bot.bat`
-
-See `GO_LIVE_STEPS.md` for the full checklist.
-
----
-
-## Updating
-
-Double-click `UPDATE.bat` — it pulls the latest code and
-upgrades pip packages in one step.
+```
+User buys via Stripe / Whop
+        │
+        ▼
+Stripe webhook → ascent_server.py → write key to keys.json
+                                   → assign Discord role
+        │
+        ▼
+User downloads installer (AscentTerminal.iss → .exe)
+        │
+        ▼
+Bot starts → POST /api/validate with key
+           → server checks keys.json + Stripe sub status
+           → returns {"valid": true} or 401
+        │
+        ▼
+Bot connects to MEXC WS → receives orderbook / trades
+        │
+        ▼
+Strategy logic fires signal → places order via REST
+        │
+        ▼
+Discord webhook → #alerts channel post
+```
 
 ---
 
-## Known limitations / TODO
+## Secrets & credentials
 
-* No web dashboard yet — monitoring is Telegram-only
-* edge_lab scans only the last 500 candles (fast but shallow)
-* trend_bot position sizing is fixed (no Kelly / volatility scaling)
-* No multi-exchange support — MEXC only
+All secrets live in `.env` (never committed). See `GO_LIVE_STEPS.md §1` for the full variable list.
+
+`platform/keys.json` is also gitignored — back it up separately.
+
+---
+
+## Running locally (dev)
+
+```bash
+# 1. Clone
+git clone https://github.com/kd1685/Claude.git
+cd Claude
+
+# 2. Install deps
+pip install -r requirements.txt
+
+# 3. Copy and fill .env
+cp .env.example .env
+
+# 4. Start the server
+python3 server_launcher/ascent_server.py
+
+# 5. Run the bot (separate terminal)
+python3 bots/scalper_bot.py
+```
+
+---
+
+## Testing
+
+```bash
+tools\RUN_TESTS.bat   # Windows
+# or
+python3 -m pytest tests/ -v
+```
+
+There are currently integration-style smoke tests only (no unit tests). PRs adding pytest coverage are welcome.
+
+---
+
+## Deployment
+
+See `GO_LIVE_STEPS.md` for the full VPS deploy walkthrough.
+
+Quick reference:
+```bash
+bash tools/DEPLOY_TO_VPS.bat   # copies files, restarts service
+```
+
+---
+
+## Known issues / TODOs
+
+- [ ] `brain/mexc_trend_bot.py` has a hardcoded symbol list — make it config-driven
+- [ ] No automated tests for the Flask routes
+- [ ] Installer (`AscentTerminal.iss`) needs code-signing certificate
+- [ ] Patreon webhook for real-time tier changes not yet wired up
+- [ ] Rate-limit `/api/validate` to prevent key-brute-force
+
+---
+
+## Contact
+
+Project owner: **kd1685** (GitHub)  
+Email: mrpacstar@gmail.com
