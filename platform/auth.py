@@ -1,32 +1,23 @@
-"""auth.py — API-key authentication + tier enforcement for Ascent Terminal.
-
-Imported by other modules for require_tier / get_current_user.
-The main FastAPI app is in app.py.
-"""
+"""auth.py — API-key authentication + tier enforcement for Ascent Terminal."""
 
 from __future__ import annotations
 
 import json
 import os
-import time
 from pathlib import Path
 
 from fastapi import Depends, Header, HTTPException
 from pydantic import BaseModel
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
-ACCESS_KEYS_RAW = os.getenv("ACCESS_KEYS", "")
-ACCESS_KEYS: set[str] = set(filter(None, ACCESS_KEYS_RAW.split(",")))
-
+ACCESS_KEYS: set[str] = set()
 KEYS_FILE = Path("keys.json")
 
 
-# ---------------------------------------------------------------------------
-# Key store helpers
-# ---------------------------------------------------------------------------
+def init_env_keys(raw: str) -> None:
+    """Populate ACCESS_KEYS from a comma-separated env string."""
+    global ACCESS_KEYS
+    ACCESS_KEYS = set(filter(None, raw.split(",")))
+
 
 def _load_keys() -> dict[str, dict]:
     try:
@@ -40,7 +31,6 @@ def _save_keys(keys: dict[str, dict]) -> None:
 
 
 def _key_tier(api_key: str) -> str | None:
-    """Return the tier for *api_key* or None if unknown / revoked."""
     if api_key in ACCESS_KEYS:
         return "architect"
     if api_key == "DEMO-KEY" and not ACCESS_KEYS:
@@ -51,10 +41,6 @@ def _key_tier(api_key: str) -> str | None:
         return entry.get("tier", "observer")
     return None
 
-
-# ---------------------------------------------------------------------------
-# Auth dependency
-# ---------------------------------------------------------------------------
 
 TIER_RANK = {"observer": 1, "operator": 2, "architect": 3}
 
@@ -72,7 +58,6 @@ async def get_current_user(x_api_key: str = Header(...)) -> AuthenticatedUser:
 
 
 def require_tier(minimum: str):
-    """Dependency factory — raises 403 if user tier is below *minimum*."""
     async def _check(user: AuthenticatedUser = Depends(get_current_user)):
         if TIER_RANK.get(user.tier, 0) < TIER_RANK.get(minimum, 99):
             raise HTTPException(
