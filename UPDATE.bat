@@ -1,68 +1,49 @@
 @echo off
-REM UPDATE.bat — migrate from old ROK bot to AscentTerminal, or update between AT versions.
-REM Run this from the AscentTerminal folder.
+REM ============================================================
+REM  UPDATE.bat — pull latest code and upgrade pip packages
+REM ============================================================
 
-cd /d "%~dp0"
-
+echo.
 echo ============================================================
-echo  AscentTerminal — update / first-run setup
+echo  Ascent Terminal — Updater
 echo ============================================================
 echo.
 
-REM ── 1. Install / upgrade Python dependencies ─────────────────────────────
-echo [1/5] Installing Python dependencies...
-pip install -r platform\requirements.txt
+REM ── 1. Pull latest from GitHub ──────────────────────────────
+echo [1/3] Pulling latest code from GitHub...
+git pull
 if errorlevel 1 (
     echo.
-    echo  ERROR: pip install failed. Make sure Python 3.10+ is on PATH.
-    pause & exit /b 1
+    echo  ERROR: git pull failed.
+    echo  Make sure git is installed and you have internet access.
+    pause
+    exit /b 1
 )
 echo  Done.
 echo.
 
-REM ── 2. Migrate old ROK bot .env if present ───────────────────────────────
-echo [2/5] Checking for old ROK bot config...
-if exist "..\rok_bot\.env" (
-    echo  Found ..\rok_bot\.env — migrating values to platform\.env ...
-    python organise.bat --migrate-env ..\rok_bot\.env platform\.env
-    echo  Migration done. Review platform\.env before launching.
-) else if exist "platform\.env" (
-    echo  platform\.env already exists — skipping migration.
+REM ── 2. Upgrade pip packages ─────────────────────────────────
+echo [2/3] Upgrading pip packages...
+if exist platform\requirements.txt (
+    pip install --upgrade -r platform\requirements.txt
 ) else (
-    echo  No old .env found — copying .env.example to platform\.env
-    copy platform\.env.example platform\.env
-    echo  IMPORTANT: edit platform\.env before going live.
+    pip install --upgrade ccxt python-dotenv requests pandas numpy ta
 )
+if errorlevel 1 (
+    echo.
+    echo  WARNING: pip upgrade had errors — check output above.
+)
+echo  Done.
 echo.
 
-REM ── 3. Migrate old keys.json if present ──────────────────────────────────
-echo [3/5] Checking for existing keys.json...
-if exist "..\rok_bot\keys.json" (
-    echo  Copying ..\rok_bot\keys.json → platform\keys.json
-    copy /Y "..\rok_bot\keys.json" "platform\keys.json"
-) else (
-    echo  No old keys.json found — a fresh one will be created on first run.
-)
+REM ── 3. Re-run organiser to sync any new scripts ─────────────
+echo [3/3] Syncing scripts via organise.bat...
+call organise.bat
+echo  Done.
 echo.
 
-REM ── 4. Migrate old data/ if present ──────────────────────────────────────
-echo [4/5] Checking for existing data directory...
-if exist "..\rok_bot\data" (
-    echo  Copying ..\rok_bot\data\ → platform\data\
-    xcopy /E /I /Y "..\rok_bot\data" "platform\data"
-) else (
-    echo  No old data\ found — starting fresh.
-)
+echo ============================================================
+echo  Update complete.  You can now start the bot.
+echo ============================================================
 echo.
-
-REM ── 5. Launch ─────────────────────────────────────────────────────────────
-echo [5/5] Ready to launch.
-echo.
-set /p LAUNCH="Launch AscentTerminal now? (Y/N): "
-if /i "%LAUNCH%"=="Y" (
-    python server_launcher\ascent_server.py
-) else (
-    echo  Run  python server_launcher\ascent_server.py  when ready.
-)
-
 pause

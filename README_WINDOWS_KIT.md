@@ -1,87 +1,90 @@
-# Windows Kit — AscentTerminal Desktop App
+# Ascent Terminal — Windows kit
 
-This guide covers building the optional Windows desktop app and installer.
-The app is a lightweight wrapper around the web terminal — it opens a native
-window showing `http://localhost:8000` (or a remote URL) using pywebview.
+What's in this folder and how to get started on a Windows PC.
 
 ---
 
-## Prerequisites (on your Windows PC)
+## Quick start (3 steps)
 
-```
-pip install pywebview pyinstaller
-```
+1. **Run `organise.bat`** — sets up the `platform/` folder,
+   copies scripts, writes starter `.env` and `requirements.txt`.
 
-Also install **Inno Setup 6** (free): https://jrsoftware.org/isdl.php
+2. **Fill in `platform\.env`** — add your MEXC API key/secret
+   and Telegram credentials.
 
----
+3. **Double-click `platform\run_bot.bat`** — starts the scalper.
 
-## Build steps
-
-### 1. Build the exe
-
-```
-cd platform\desktop
-python build_desktop.py
-```
-
-This runs PyInstaller and creates `dist\AscentTerminal\` (a folder, not a
-single file — `--onedir` avoids false-positive AV flags that `--onefile` often
-triggers).
-
-### 2. Compile the installer
-
-Open Inno Setup → File → Open → `installer\AscentTerminal.iss` → Compile.
-
-This creates `installer\Output\AscentTerminalSetup.exe`.
-
-### 3. Get the SHA-256
-
-```
-certutil -hashfile installer\Output\AscentTerminalSetup.exe SHA256
-```
-
-Paste the hash into `platform\static\download.html` where marked.
-
-### 4. Upload to the server
-
-```
-scp installer\Output\AscentTerminalSetup.exe root@<SERVER_IP>:/root/AscentTerminal/platform/static/dl/
-scp platform\desktop\dist\AscentTerminal.zip  root@<SERVER_IP>:/root/AscentTerminal/platform/static/dl/
-```
-
-(Create the `dl/` folder first if it doesn't exist: `mkdir -p /root/AscentTerminal/platform/static/dl/`)
+For the full checklist see `GO_LIVE_STEPS.md`.
 
 ---
 
-## SmartScreen / code-signing
+## Files in this kit
 
-Windows SmartScreen will warn on unsigned executables until they accumulate
-enough "reputation". Options:
-
-- **Do nothing** — the warning says "Unknown publisher", users click
-  *More info → Run anyway*. Fine for early access.
-- **Self-sign** (removes the warning for users who import your cert, not
-  recommended for distribution).
-- **Buy an OV code-signing cert** (~$70–200/yr from Sectigo, DigiCert, etc.)
-  — eliminates the SmartScreen warning for everyone immediately.
-  Worth it once you have paying subscribers.
-
-For the icon, export `platform/static/brand/app-icon-ios-1024.png` to
-`platform/desktop/icon.ico` using an online converter or ImageMagick:
-```
-convert app-icon-ios-1024.png -resize 256x256 icon.ico
-```
+| File / folder | Purpose |
+|---|---|
+| `organise.bat` | One-click setup |
+| `UPDATE.bat` | Pull latest code + upgrade packages |
+| `GO_LIVE_STEPS.md` | Step-by-step go-live guide |
+| `HANDOFF.md` | Full project overview |
+| `UPDATE_NOTES.md` | Change log |
+| `LAUNCH_PLAN.txt` | Phased rollout plan |
+| `WHAT_TO_DO_NOW.txt` | Cheat-sheet for right now |
+| `bots/scalper_bot.py` | 1-min scalper (main bot) |
+| `brain/mexc_trend_bot.py` | Daily trend-follower |
+| `brain/edge_lab.py` | Parameter research tool |
+| `brain/swing_backtest.py` | Swing-trade backtester |
+| `brain/RUN_EDGE_LAB.bat` | Launcher for edge_lab |
 
 ---
 
-## Local dev (no batch files, no AV flags)
+## Python version
 
-To run the terminal locally on your Windows PC without building the exe:
+Use **Python 3.10 or newer**.
+Download from https://www.python.org/downloads/
+Tick "Add Python to PATH" during install.
+
+---
+
+## Installing dependencies
+
+After running `organise.bat`:
 
 ```
-python server_launcher\ascent_server.py --setup    # first time only
-python server_launcher\ascent_server.py            # subsequent runs
+cd platform
+pip install -r requirements.txt
 ```
 
-This installs dependencies, starts the FastAPI server, and opens your browser.
+Packages installed: `ccxt`, `python-dotenv`, `requests`,
+`pandas`, `numpy`, `ta`
+
+---
+
+## Telegram setup (5 min)
+
+1. Open Telegram, search **@BotFather**
+2. `/newbot` → follow prompts → copy the token
+3. Send any message to your new bot
+4. Visit `https://api.telegram.org/bot<TOKEN>/getUpdates`
+5. Copy the `id` field under `chat` — that's your chat id
+
+---
+
+## MEXC API setup
+
+1. Log in to mexc.com
+2. Profile → API Management → Create API Key
+3. Permissions: **Read** + **Trade** (Futures)
+4. Copy key and secret into `platform\.env`
+5. Do **not** enable withdrawal permission
+
+---
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `pip` not found | Re-install Python with "Add to PATH" ticked |
+| `ModuleNotFoundError` | Run `pip install -r requirements.txt` again |
+| No Telegram messages | Check token and chat id in `.env` |
+| MEXC auth error | Re-generate API key, paste carefully |
+| Bot opens and closes instantly | Right-click bat → Run as Administrator |

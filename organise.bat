@@ -1,102 +1,140 @@
 @echo off
-REM organise.bat — project-level utility. Wraps Python tasks that
-REM are awkward as pure batch. Called by UPDATE.bat for env migration.
-REM
-REM Usage (direct):
-REM   organise.bat --migrate-env <src_env> <dst_env>
-REM   organise.bat --list-keys
-REM   organise.bat --new-key --tier architect --note "owner"
-REM   organise.bat --check-health
+echo Starting organiser...
+echo Log: %USERPROFILE%\Desktop\organise_log.txt
 
-cd /d "%~dp0"
+REM ============================================================
+REM  organise.bat — Ascent Terminal Windows setup
+REM  Run this once on a new PC (or after a git pull).
+REM  It creates the platform/ folder layout and copies scripts.
+REM ============================================================
 
-if "%1"=="--migrate-env" goto migrate_env
-if "%1"=="--list-keys"   goto list_keys
-if "%1"=="--new-key"     goto new_key
-if "%1"=="--check-health" goto check_health
+setlocal enabledelayedexpansion
+
+REM ── Resolve repo root (folder containing this .bat) ─────────
+set "REPO=%~dp0"
+if "%REPO:~-1%"=="\" set "REPO=%REPO:~0,-1%"
+
+REM ── Target platform folder ──────────────────────────────────
+set "PLAT=%REPO%\platform"
 
 echo.
-echo  organise.bat — available commands:
-echo    --migrate-env ^<src^> ^<dst^>   copy/merge .env values into destination
-echo    --list-keys                  list all keys in keys.json
-echo    --new-key --tier ^<t^> --note ^<n^>  generate a new subscriber key
-echo    --check-health               hit /api/health and print the response
+echo ============================================================
+echo  Ascent Terminal — Organiser
+echo  Repo : %REPO%
+echo  Platform : %PLAT%
+echo ============================================================
 echo.
-goto end
 
-:migrate_env
-REM ── Merge old .env into new one, skipping keys already set ─────────────────
-python -c "
-import sys, os, re
-src, dst = sys.argv[1], sys.argv[2]
-if not os.path.exists(src):
-    print(f'  src {src!r} not found — nothing to migrate.')
-    sys.exit(0)
+REM ── Create folder layout ────────────────────────────────────
+echo [1/6] Creating folder layout...
+for %%D in (
+    "%PLAT%"
+    "%PLAT%\bots"
+    "%PLAT%\brain"
+    "%PLAT%\data"
+    "%PLAT%\logs"
+) do (
+    if not exist "%%~D" (
+        mkdir "%%~D"
+        echo   Created: %%~D
+    ) else (
+        echo   Exists : %%~D
+    )
+)
+echo.
 
-# Parse existing dst keys so we don't overwrite
-existing = set()
-if os.path.exists(dst):
-    for line in open(dst):
-        m = re.match(r'^([A-Z_][A-Z0-9_]*)=', line)
-        if m: existing.add(m.group(1))
+REM ── Copy bot scripts ────────────────────────────────────────
+echo [2/6] Copying bot scripts...
+if exist "%REPO%\bots\scalper_bot.py" (
+    copy /Y "%REPO%\bots\scalper_bot.py" "%PLAT%\bots\scalper_bot.py" >nul
+    echo   Copied: bots/scalper_bot.py
+) else (
+    echo   MISSING: bots/scalper_bot.py — skipped
+)
+echo.
 
-added = []
-with open(dst, 'a') as out:
-    for line in open(src):
-        m = re.match(r'^([A-Z_][A-Z0-9_]*)=(.*)', line.rstrip())
-        if m and m.group(1) not in existing:
-            out.write(line if line.endswith('\n') else line + '\n')
-            added.append(m.group(1))
+REM ── Copy brain scripts ──────────────────────────────────────
+echo [3/6] Copying brain scripts...
+for %%F in (
+    "mexc_trend_bot.py"
+    "edge_lab.py"
+    "swing_backtest.py"
+    "RUN_EDGE_LAB.bat"
+) do (
+    if exist "%REPO%\brain\%%~F" (
+        copy /Y "%REPO%\brain\%%~F" "%PLAT%\brain\%%~F" >nul
+        echo   Copied: brain/%%~F
+    ) else (
+        echo   MISSING: brain/%%~F — skipped
+    )
+)
+echo.
 
-if added:
-    print(f'  Migrated: {chr(44).join(added)}')
-else:
-    print('  Nothing new to migrate (all keys already present in dst).')
-" "%2" "%3"
-goto end
+REM ── Write .env (only if it doesn't exist) ───────────────────
+echo [4/6] Writing starter .env...
+if not exist "%PLAT%\.env" (
+    (
+        echo # Ascent Terminal — environment variables
+        echo # Fill in your real values before running any bot.
+        echo.
+        echo MEXC_API_KEY=YOUR_KEY_HERE
+        echo MEXC_API_SECRET=YOUR_SECRET_HERE
+        echo.
+        echo TELEGRAM_BOT_TOKEN=YOUR_TOKEN_HERE
+        echo TELEGRAM_CHAT_ID=YOUR_CHAT_ID_HERE
+        echo.
+        echo # Trading settings
+        echo SYMBOL=BTC/USDT:USDT
+        echo POSITION_SIZE_USDT=20
+        echo LEVERAGE=5
+        echo TP_PCT=0.8
+        echo SL_PCT=0.4
+        echo RSI_OVERSOLD=35
+        echo RSI_OVERBOUGHT=65
+        echo.
+        echo # Safety
+        echo PAPER_TRADE=true
+    ) > "%PLAT%\.env"
+    echo   Written: platform/.env  ^(fill in your credentials^)
+) else (
+    echo   Exists : platform/.env  ^(not overwritten^)
+)
+echo.
 
-:list_keys
-python -c "
-import json, os
-path = os.path.join('platform', 'keys.json')
-if not os.path.exists(path):
-    print('  keys.json not found — no keys issued yet.')
-else:
-    data = json.load(open(path))
-    keys = data if isinstance(data, list) else data.get('keys', [])
-    if not keys:
-        print('  No keys found.')
-    for k in keys:
-        note  = k.get('note', '')
-        tier  = k.get('tier', '?')
-        exp   = k.get('expires', 'never')
-        revok = ' [REVOKED]' if k.get('revoked') else ''
-        print(f'  {tier:<12} exp={exp:<12} {note}{revok}')
-"
-goto end
+REM ── Write requirements.txt ──────────────────────────────────
+echo [5/6] Writing requirements.txt...
+(
+    echo ccxt
+    echo python-dotenv
+    echo requests
+    echo pandas
+    echo numpy
+    echo ta
+) > "%PLAT%\requirements.txt"
+echo   Written: platform/requirements.txt
+echo.
 
-:new_key
-REM parse --tier and --note from remaining args
-set TIER=observer
-set NOTE=
-:parse_new_key_args
-if "%2"=="" goto do_new_key
-if /i "%2"=="--tier" ( set TIER=%3 & shift & shift & goto parse_new_key_args )
-if /i "%2"=="--note" ( set NOTE=%3 & shift & shift & goto parse_new_key_args )
-shift & goto parse_new_key_args
-:do_new_key
-python platform\key_gen.py new --tier %TIER% --note "%NOTE%"
-goto end
+REM ── Write run_bot.bat ───────────────────────────────────────
+echo [6/6] Writing run_bot.bat...
+(
+    echo @echo off
+    echo REM Ascent Terminal — start the scalper bot
+    echo cd /d "%%~dp0"
+    echo python bots/scalper_bot.py
+    echo pause
+) > "%PLAT%\run_bot.bat"
+echo   Written: platform/run_bot.bat
+echo.
 
-:check_health
-python -c "
-import urllib.request, json
-try:
-    r = urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)
-    print('  Status:', r.status, json.loads(r.read()))
-except Exception as e:
-    print('  Health check failed:', e)
-"
-goto end
-
-:end
+echo ============================================================
+echo  Setup complete.
+echo.
+echo  Next steps:
+echo   1. Open platform\.env and fill in your credentials
+echo   2. Run:  pip install -r platform\requirements.txt
+echo   3. Double-click platform\run_bot.bat to start the bot
+echo.
+echo  See GO_LIVE_STEPS.md for the full checklist.
+echo ============================================================
+echo.
+pause

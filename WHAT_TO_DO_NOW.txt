@@ -1,56 +1,79 @@
-════════════════════════════════════════════════════════════════════
- ASCENT TERMINAL — WHAT TO DO RIGHT NOW
-════════════════════════════════════════════════════════════════════
-You have the zip. Here is the shortest path from "zip on my PC"
-to "live site taking subscribers".
+# ✅ WHAT TO DO NOW — owner runbook (post-upgrade)
 
-──────────────────────────────────────────────────────────────────
- TODAY (2–3 hours including DNS wait)
-──────────────────────────────────────────────────────────────────
-1. Double-click UPDATE.bat
-   It migrates your old .env / keys / data and offers to launch.
-   Test the app at http://localhost:8000 — unlock, click around.
+You've just received the v3.0 upgrade of Ascent Terminal.
+Here's exactly what to do next, in order.
 
-2. Buy the domain + VPS (if not done yet)
-   Domain: ascentterminal.com at Cloudflare/Namecheap/Porkbun (~£9)
-   VPS: Hetzner CX22 or DO Basic (~£4/mo) — Ubuntu 24.04
-   Point two A-records (@ and www) at the server IP.
+──────────────────────────────────────────────────
+ RIGHT NOW  (today, ~15 min)
+──────────────────────────────────────────────────
 
-3. Follow platform/DEPLOY.md (copy-paste, ~30 min)
-   Sets up Docker, uploads the app, starts it behind Caddy (HTTPS
-   cert is fetched automatically).
+1. Pull the latest code
+   git pull
+   (or double-click UPDATE.bat if git pull doesn't work alone)
 
-4. Check https://ascentterminal.com — padlock, your architect key
-   unlocks everything, observer key can't open BOTS.
+2. Run the organiser
+   Double-click  organise.bat
+   It will create the platform/ folder and copy all scripts.
 
-──────────────────────────────────────────────────────────────────
- TOMORROW (~45 min)
-──────────────────────────────────────────────────────────────────
-5. Set up Stripe (GO_LIVE_STEPS.md §3) — direct checkout, automated
-   key delivery by email. Needs SMTP first (~10 min on resend.com).
+3. Open  platform\.env  in Notepad
+   Fill in:
+     MEXC_API_KEY=...
+     MEXC_API_SECRET=...
+     TELEGRAM_BOT_TOKEN=...
+     TELEGRAM_CHAT_ID=...
 
-6. Rebrand Whop/Patreon/Discord (REBRAND_COPY.md — paste-ready copy)
-   Upload brand/ graphics. Fire the X thread (it's §5 of REBRAND_COPY).
+   If you don't have a Telegram bot yet:
+     → Open Telegram → search @BotFather → /newbot
 
-──────────────────────────────────────────────────────────────────
+4. Install dependencies (if not already done)
+   Open a terminal in  platform/
+   pip install -r requirements.txt
+
+5. Start the scalper in PAPER mode
+   Double-click  platform\run_bot.bat
+   — or —
+   cd platform
+   python bots/scalper_bot.py
+
+   You should see Telegram messages within a few minutes.
+   They will say [PAPER] — that means no real money.
+
+──────────────────────────────────────────────────
  THIS WEEK
-──────────────────────────────────────────────────────────────────
-7. Security fixes (GO_LIVE_STEPS.md §2) — 5 min:
-   • Generate TV_WEBHOOK_SECRET (currently empty!)
-   • Rotate EXECUTE_KEY + Discord webhook (were in a chat upload)
+──────────────────────────────────────────────────
 
-8. Forward tester (§7) — 5 min — starts your live track record.
+□ Let the paper bot run for 24-48 h — check the logs
+□ Run edge_lab.py to find the best parameters for your symbol
+□ Read GO_LIVE_STEPS.md for the full go-live checklist
+□ Read LAUNCH_PLAN.txt for the phased rollout plan
 
-9. Cloudflare (§11) — 25 min — free DDoS shield + hides VPS IP.
+──────────────────────────────────────────────────
+ WHEN READY TO GO LIVE
+──────────────────────────────────────────────────
 
-10. Windows app (§8) — ~20 min on your PC — build + upload the .exe.
+□ Set  PAPER_TRADE=false  in  platform\.env
+□ Set  POSITION_SIZE_USDT=10  (start small)
+□ Restart the bot
+□ Watch first 5 trades carefully
 
-──────────────────────────────────────────────────────────────────
- THE RUNBOOK FOR EVERYTHING ELSE
-──────────────────────────────────────────────────────────────────
-GO_LIVE_STEPS.md has 16 numbered sections covering every detail.
-LAUNCH_PLAN.txt is the high-level sequence.
-HANDOFF.md is the project brief for a new Claude chat.
+──────────────────────────────────────────────────
+ USEFUL COMMANDS
+──────────────────────────────────────────────────
 
-Stuck anywhere → screenshot/paste the error and I'll fix it.
-════════════════════════════════════════════════════════════════════
+  Start scalper:       python bots/scalper_bot.py
+  Start trend bot:     python brain/mexc_trend_bot.py
+  Run research:        python brain/edge_lab.py
+  Run backtest:        python brain/swing_backtest.py
+  Update everything:   double-click UPDATE.bat
+
+──────────────────────────────────────────────────
+ FILES TO KNOW
+──────────────────────────────────────────────────
+
+  platform/.env          ← your secrets
+  platform/logs/         ← log files
+  platform/data/         ← trade CSVs
+  GO_LIVE_STEPS.md       ← step-by-step guide
+  LAUNCH_PLAN.txt        ← phased plan
+  HANDOFF.md             ← full project overview
+  UPDATE_NOTES.md        ← what changed in v3.0
