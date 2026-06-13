@@ -1,8 +1,7 @@
-"""ascent_desktop.py — Desktop client for Ascent Terminal.
+"""ascent_desktop.py — Desktop launcher for Ascent Terminal.
 
-Opens a native window (via pywebview) pointed at the configured Ascent
-Terminal server URL.  The URL and API key can be set via environment
-variables or a local config file.
+Opens Ascent Terminal in the system default browser (Edge/Chrome).
+Stores the server URL and API key in a local config file.
 
 Usage:
     python ascent_desktop.py [--url https://ascentterminal.com] [--api-key AT-xxx]
@@ -14,16 +13,10 @@ import argparse
 import json
 import os
 import sys
+import webbrowser
 from pathlib import Path
 
-try:
-    import webview  # type: ignore
-except ImportError:
-    print("pywebview is required: pip install pywebview", file=sys.stderr)
-    sys.exit(1)
-
 CONFIG_FILE = Path.home() / ".ascent" / "config.json"
-
 DEFAULT_URL = "https://ascentterminal.com"
 
 
@@ -40,7 +33,7 @@ def _save_config(cfg: dict) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Ascent Terminal Desktop")
+    parser = argparse.ArgumentParser(description="Ascent Terminal Launcher")
     parser.add_argument("--url", default=None, help="Server URL")
     parser.add_argument("--api-key", default=None, help="API key")
     args = parser.parse_args()
@@ -63,15 +56,7 @@ def main() -> None:
     if api_key and "?" not in url:
         url = f"{url}?api_key={api_key}"
 
-    webview.create_window(
-        title="Ascent Terminal",
-        url=url,
-        width=1400,
-        height=900,
-        resizable=True,
-        min_size=(800, 600),
-    )
-    webview.start(debug=False, gui="edgechromium")
+    webbrowser.open(url)
 
 
 if __name__ == "__main__":

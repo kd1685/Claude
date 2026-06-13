@@ -1,4 +1,4 @@
-"""build_desktop.py — PyInstaller build script for Ascent Terminal desktop client.
+"""build_desktop.py — PyInstaller build script for Ascent Terminal desktop launcher.
 
 Usage:
     python build_desktop.py
@@ -18,44 +18,34 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=[
-        'webview',
-        'webview.platforms.edgechromium',
-        'clr_loader',
-    ],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['webview.platforms.winforms', 'webview.platforms.gtk'],
+    excludes=[],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
     [],
-    exclude_binaries=True,
     name='AscentTerminal',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
+    upx_exclude=[],
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-)
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='AscentTerminal',
+    onefile=True,
 )
 """
 
@@ -72,7 +62,7 @@ def main() -> None:
         check=False,
     )
     if result.returncode == 0:
-        print("[build] Build successful. Output: dist/AscentTerminal/")
+        print("[build] Build successful. Output: dist/AscentTerminal.exe")
     else:
         print("[build] Build FAILED.", file=sys.stderr)
         sys.exit(1)
