@@ -1,0 +1,63 @@
+════════════════════════════════════════════════════════════════════
+ ASCENT TERMINAL — WHAT TO DO RIGHT NOW
+════════════════════════════════════════════════════════════════════
+You asked: what should I do next?
+Answer: three things, in order. Everything else can wait.
+
+──────────────────────────────────────────────────────────────────
+ 1. UPLOAD THE NEW CODE + REBUILD (10 min)
+──────────────────────────────────────────────────────────────────
+Your VPS still runs the old build. This zip has the proxy fix,
+the encrypted-email update, the new bot-allowance logic, and all
+the other changes listed in UPDATE_NOTES.md.
+
+  From your PC:
+      scp -r AscentTerminal root@<SERVER_IP>:/root/
+
+  On the server:
+      cd /root/AscentTerminal/platform
+      docker compose up -d --build
+
+Your .env, keys.json and data/ are NEVER touched by scp — only
+code files overwrite. The rebuild picks up the new Dockerfile
+(uvicorn proxy-headers fix) and new Python deps automatically.
+
+──────────────────────────────────────────────────────────────────
+ 2. FIX THE TWO SECURITY GAPS (5 min after the rebuild)
+──────────────────────────────────────────────────────────────────
+Both live in .env on the server (nano .env, then force-recreate):
+
+  a) TV_WEBHOOK_SECRET is BLANK — anyone can POST fake alerts.
+     Generate a secret:  openssl rand -hex 32
+     Put it in .env AND in every TradingView alert's JSON body
+     as  "secret":"<that value>".
+
+  b) EXECUTE_KEY and DISCORD_WEBHOOK_URL were in the .env you
+     pasted into chat. Low-risk (only you can see it), but
+     cheap to fix: generate a new EXECUTE_KEY (same openssl
+     command), recreate the Discord webhook, update .env.
+
+  Apply:  docker compose up -d --force-recreate
+  (.env changes only take effect at container start.)
+
+──────────────────────────────────────────────────────────────────
+ 3. SET UP STRIPE SO THE SITE TAKES MONEY (30 min, tomorrow)
+──────────────────────────────────────────────────────────────────
+This is the only thing between you and automated revenue.
+Full instructions: §3 of GO_LIVE_STEPS.md.
+Short version:
+  • Resend.com (free) for SMTP → .env SMTP_* values
+  • 5 Stripe Products + Payment Links (3 tiers + 2 add-ons)
+  • Webhook at /api/stripe-webhook → .env STRIPE_WEBHOOK_SECRET
+  • Paste link URLs into static/landing.html → redeploy
+  • Test with Stripe test mode → key arrives by email
+
+──────────────────────────────────────────────────────────────────
+ THAT'S THE CRITICAL PATH. EVERYTHING ELSE IS OPTIONAL FOR NOW.
+──────────────────────────────────────────────────────────────────
+Once those three are done, the platform is live, secure, and
+taking payments. Then pick up the rest of GO_LIVE_STEPS.md
+at your own pace (Cloudflare, forward service, Windows app, etc.).
+
+Stuck on any step? Paste the error and I'll fix it.
+════════════════════════════════════════════════════════════════════
