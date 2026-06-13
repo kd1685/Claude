@@ -1,126 +1,96 @@
-════════════════════════════════════════════════════════════════════
- ASCENT TERMINAL — LAUNCH PLAN (do these in order, top to bottom)
-════════════════════════════════════════════════════════════════════
-Everything is built. This is the exact sequence from "zip on my PC"
-to "live website taking subscribers". Times are realistic.
-Detailed copy-paste server commands live in platform/DEPLOY.md —
-this file tells you WHEN to use it and exactly WHAT to fill in.
+╔══════════════════════════════════════════════════════════════════════╗
+║           ASCENT TERMINAL — LAUNCH PLAN (next 30 days)             ║
+╚══════════════════════════════════════════════════════════════════════╝
 
-──────────────────────────────────────────────────────────────────
- PHASE 1 — LOCAL (today, ~20 min)
-──────────────────────────────────────────────────────────────────
-1. UPDATE & TEST LOCALLY
-   • Extract AscentTerminal.zip somewhere permanent.
-   • Double-click UPDATE.bat → it migrates your old .env / keys /
-     data, installs everything (incl. ccxt + yfinance), and offers
-     to launch.
-   • In the browser (http://localhost:8000): unlock with DEMO-KEY,
-     click through CHART / SIGNALS / ALERTS / BOTS / PROOF, open the
-     asset picker (SPOT and PERPS), run a backtest. Anything feels
-     wrong → screenshot it for me.
+OWNER   : you
+PRODUCT : Ascent Terminal  (ascentterminal.com)
+GOAL    : first 50 paying subscribers inside 30 days
 
-2. CREATE YOUR REAL KEYS (platform folder, command prompt):
-       python key_gen.py new --tier architect --note "owner"
-       python key_gen.py new --tier observer  --note "test obs"
-       python key_gen.py new --tier operator  --note "test opr"
-   Copy each key when shown — they're stored hashed and can't be
-   recovered. Test each tier in the UI (observer must NOT open BOTS).
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ WEEK 1 — GO LIVE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-3. WRITE YOUR PRODUCTION .env  (copy .env.example → .env, set):
-       ACCESS_KEYS=                ← EMPTY. Kills DEMO-KEY. Real keys
-                                     live in keys.json now.
-       TV_WEBHOOK_SECRET=<long random string #1>
-       EXECUTE_KEY=<long random string #2>   (or leave empty until
-                                     you want execution/bots armed)
-       EXEC_LIVE=false             ← stays false until paper-tested
-       EXEC_MAX_USD=1000
-       AUTO_EXECUTE=false
-       DISCORD_WEBHOOK_URL=        (optional, signal posts)
-       ANTHROPIC_API_KEY=          (optional, enables Claude's read —
-                                     get one at console.anthropic.com)
-   Random strings: use a password manager's generator, 30+ chars.
+Day 1  (today)
+  ☐ Upload code to VPS via UPDATE.bat
+  ☐ Smoke-test /health endpoint
+  ☐ Confirm dashboard loads for a test login
+  ☐ Post "going live tomorrow" teaser in Discord
 
-──────────────────────────────────────────────────────────────────
- PHASE 2 — DOMAIN + VPS (today, ~30 min + DNS wait)
-──────────────────────────────────────────────────────────────────
-4. REGISTER THE DOMAIN
-   • Buy  ascentterminal.com  (full spelling) at Cloudflare,
-     Namecheap or Porkbun (~£8–10/yr).
-   • While you're at it: secure the remaining handles —
-     Instagram / Discord / TikTok / YouTube @AscentTerminal.
+Day 2  (Stripe live keys)
+  ☐ Swap Stripe test → live keys in .env
+  ☐ Register webhook (checkout.session.completed etc.)
+  ☐ Do one real £1 purchase to confirm end-to-end
+  ☐ Enable Stripe Customer Portal (for self-serve cancels)
 
-5. RENT A VPS (~£4–6/month)
-   • Hetzner (CX22) or DigitalOcean (Basic 1–2 GB) → create an
-     **Ubuntu 24.04** server. 1 GB RAM is enough; 2 GB is comfy.
-   • Note the server's public IP and set a strong root password /
-     SSH key when prompted.
+Day 3  (soft launch)
+  ☐ Announce in Discord — free-tier users get 48-hr full access
+  ☐ Post in any trading subreddits you're active in
+  ☐ DM your top 10 most-engaged Discord members personally
 
-6. POINT DNS AT THE SERVER (registrar's DNS panel):
-       Type A    Host @      Value <YOUR_SERVER_IP>
-       Type A    Host www    Value <YOUR_SERVER_IP>
-   Propagation: minutes to ~1 hour. Continue meanwhile.
+Day 4-5  (content)
+  ☐ Record a 90-second screen-capture demo (OBS, no editing needed)
+  ☐ Post clip to Twitter/X, TikTok, YouTube Shorts
+  ☐ Pin the video in Discord #announcements
 
-──────────────────────────────────────────────────────────────────
- PHASE 3 — DEPLOY THE WEBSITE/APP (~30–45 min)
-──────────────────────────────────────────────────────────────────
-7. FOLLOW platform/DEPLOY.md, Steps 2 → 8. It is copy-paste:
-     Step 2  ssh root@<YOUR_SERVER_IP>
-     Step 3  install Docker (one command block)
-     Step 4  open firewall ports 80 + 443
-     Step 5  upload the AscentTerminal folder (scp command given)
-     Step 6  settings file → the SAME .env values from item 3,
-             PLUS  DOMAIN=ascentterminal.com  (Caddy reads it from
-             .env and fetches the HTTPS certificate automatically).
-     Step 7  docker compose up -d   (builds + starts app & Caddy;
-             Caddy fetches the free HTTPS certificate itself)
-     Step 8  verify
-   keys.json + data/ are mounted OUTSIDE the container, so: upload
-   your local keys.json (same scp pattern) or just generate fresh
-   keys ON THE SERVER (DEPLOY.md shows how) — either way new keys /
-   revocations go live instantly, no restart.
+Day 6-7  (iterate)
+  ☐ Check error logs — fix anything that broke for real users
+  ☐ Reply to every piece of feedback personally
 
-8. GO-LIVE CHECKS at https://ascentterminal.com :
-   □ padlock shows (HTTPS) □ PROOF tab populates after ~30s
-   □ DEMO-KEY REJECTED □ your architect key unlocks everything
-   □ observer key blocked from BOTS □ asset picker + perps work
-   □ wrong key 10× → locked out (the brute-force shield)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ WEEK 2 — CONTENT MACHINE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-9. CONNECT TRADINGVIEW (optional now, 10 min)
-   Alert → Webhook URL:  https://ascentterminal.com/api/tv-webhook
-   Message:
-   {"symbol":"{{ticker}}","action":"BUY","price":{{close}},
-    "tp":0,"sl":0,"secret":"<TV_WEBHOOK_SECRET>"}
-   → lands in the ALERTS tab with TP/SL lines + ⚡ Execute.
+  • Post one trade breakdown per day (chart + P&L screenshot)
+    Format:  "Setup → Entry → Exit → What I learned"
+    Platforms: Twitter/X, Discord #trade-journal
 
-──────────────────────────────────────────────────────────────────
- PHASE 4 — OPEN FOR BUSINESS (this week)
-──────────────────────────────────────────────────────────────────
-10. MONETISATION
-   • Whop and/or Patreon: one product per tier —
-       Observer  = signals, charts, indicator panel, Claude's read
-       Operator  = + Strategy Lab backtests + execution bridge
-       Architect = + the bots
-     (ready-made listing copy: whop_patreon/ folder)
-   • Flow per sale: key_gen.py new --tier <their tier> --days 31
-     → DM them the key. Cancel → revoke. Live instantly.
-   • Discord: upload brand/discord-server-icon-512.png + banner;
-     put your real Whop plan IDs in discord/discord_role_sync.py.
+  • Launch a "founding member" offer:
+      First 20 subs lock in £X/mo forever  (use Stripe coupon)
 
-Optional: independent legal review of the documents whenever convenient (review pack: AscentTerminal_legal_for_review.pdf).
-    BEFORE taking money. Non-negotiable.
+  • Ask 3 happy free-tier users for a written testimonial.
+    Put them on the landing page.
 
-12. YOUR RESEARCH PLAN — backtest the 26/7 scalper (Signals tab →
-    🧪), forward paper-test survivors on the BOTS tab for weeks,
-    and only then consider its LIVE mode. The validated EMA30 edge
-    is the product today; the scalper is the lab.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ WEEK 3 — PAID ACQUISITION (small test)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-──────────────────────────────────────────────────────────────────
- ONGOING
-──────────────────────────────────────────────────────────────────
-• Update the live server later:  scp the changed files up, then
-  `docker compose up -d --build` (DEPLOY.md "Updating" section).
-• Keep forward/forward_paper running daily — your live track record.
-• Watch EXEC settings: EXECUTE_KEY empty = nothing can ever trade.
+  Budget: £50 test spend
 
-Stuck anywhere → screenshot/paste the error to me and I'll fix it.
-════════════════════════════════════════════════════════════════════
+  Option A — Reddit Ads
+    Target: r/Daytrading, r/algotrading, r/UKInvesting
+    Ad: "Free tier available — see live edge lab results"
+
+  Option B — Twitter/X Ads
+    Promote your best-performing organic tweet
+    Target: followers of @MEXC_Global, @crypto trading accounts
+
+  Measure: cost-per-free-signup, then free-to-paid conversion rate.
+  Kill anything with CPL > £5.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ WEEK 4 — REVIEW & DOUBLE DOWN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ☐ Pull metrics:
+      signups / actives / paid / churn / MRR
+
+  ☐ Kill the lowest-performing acquisition channel
+  ☐ Double spend / effort on the best one
+
+  ☐ Survey churned free-users (1 question email):
+      "What would have made you subscribe?"
+
+  ☐ Ship the #1 feature request from paying users
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 30-DAY NORTH STAR METRIC
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Target : 50 paid subscribers
+  Floor  : 20 paid subscribers (break-even on VPS + tools)
+  Stretch: 100 paid subscribers
+
+  Track daily in a simple spreadsheet:
+    date | new_signups | new_paid | total_paid | MRR
+
+  Review every Sunday morning. Adjust the plan; keep the goal.
