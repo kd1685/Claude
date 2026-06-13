@@ -1,150 +1,126 @@
-ASCENT TERMINAL — LAUNCH PLAN
-==============================
-Last updated: June 2025
+════════════════════════════════════════════════════════════════════
+ ASCENT TERMINAL — LAUNCH PLAN (do these in order, top to bottom)
+════════════════════════════════════════════════════════════════════
+Everything is built. This is the exact sequence from "zip on my PC"
+to "live website taking subscribers". Times are realistic.
+Detailed copy-paste server commands live in platform/DEPLOY.md —
+this file tells you WHEN to use it and exactly WHAT to fill in.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SECTION 1 — PRODUCT OVERVIEW
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+──────────────────────────────────────────────────────────────────
+ PHASE 1 — LOCAL (today, ~20 min)
+──────────────────────────────────────────────────────────────────
+1. UPDATE & TEST LOCALLY
+   • Extract AscentTerminal.zip somewhere permanent.
+   • Double-click UPDATE.bat → it migrates your old .env / keys /
+     data, installs everything (incl. ccxt + yfinance), and offers
+     to launch.
+   • In the browser (http://localhost:8000): unlock with DEMO-KEY,
+     click through CHART / SIGNALS / ALERTS / BOTS / PROOF, open the
+     asset picker (SPOT and PERPS), run a backtest. Anything feels
+     wrong → screenshot it for me.
 
-Product name : Ascent Terminal
-Target market: Retail crypto futures traders (MEXC, non-US)
-Core promise : "A research-grade edge, packaged for real traders."
+2. CREATE YOUR REAL KEYS (platform folder, command prompt):
+       python key_gen.py new --tier architect --note "owner"
+       python key_gen.py new --tier observer  --note "test obs"
+       python key_gen.py new --tier operator  --note "test opr"
+   Copy each key when shown — they're stored hashed and can't be
+   recovered. Test each tier in the UI (observer must NOT open BOTS).
 
-What subscribers get
---------------------
-  • Desktop trading bot (Windows .exe, PyQt5 GUI)
-  • Live signal alerts in Discord
-  • Access to the brain/ back-test scripts
-  • Monthly edge-lab reports
-  • Priority Discord support
+3. WRITE YOUR PRODUCTION .env  (copy .env.example → .env, set):
+       ACCESS_KEYS=                ← EMPTY. Kills DEMO-KEY. Real keys
+                                     live in keys.json now.
+       TV_WEBHOOK_SECRET=<long random string #1>
+       EXECUTE_KEY=<long random string #2>   (or leave empty until
+                                     you want execution/bots armed)
+       EXEC_LIVE=false             ← stays false until paper-tested
+       EXEC_MAX_USD=1000
+       AUTO_EXECUTE=false
+       DISCORD_WEBHOOK_URL=        (optional, signal posts)
+       ANTHROPIC_API_KEY=          (optional, enables Claude's read —
+                                     get one at console.anthropic.com)
+   Random strings: use a password manager's generator, 30+ chars.
 
-Pricing
--------
-  Monthly : $49 / month
-  Annual  : $399 / year  (32% saving)
-  Lifetime: $999 one-off  (planned — Q3 2025)
+──────────────────────────────────────────────────────────────────
+ PHASE 2 — DOMAIN + VPS (today, ~30 min + DNS wait)
+──────────────────────────────────────────────────────────────────
+4. REGISTER THE DOMAIN
+   • Buy  ascentterminal.com  (full spelling) at Cloudflare,
+     Namecheap or Porkbun (~£8–10/yr).
+   • While you're at it: secure the remaining handles —
+     Instagram / Discord / TikTok / YouTube @AscentTerminal.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SECTION 2 — PRE-LAUNCH CHECKLIST
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. RENT A VPS (~£4–6/month)
+   • Hetzner (CX22) or DigitalOcean (Basic 1–2 GB) → create an
+     **Ubuntu 24.04** server. 1 GB RAM is enough; 2 GB is comfy.
+   • Note the server's public IP and set a strong root password /
+     SSH key when prompted.
 
-  [x] Strategy back-tested and walk-forwarded (brain/)
-  [x] Bot built and manually tested (bots/scalper_bot.py)
-  [x] Server built (server_launcher/ascent_server.py)
-  [x] Legal docs written (legal/)
-  [x] Discord server structured
-  [x] Stripe products created
-  [x] Whop listing drafted
-  [x] Patreon listing drafted
-  [ ] Domain purchased and pointed to VPS
-  [ ] TLS cert obtained
-  [ ] End-to-end smoke test passed (GO_LIVE_STEPS.md §6)
-  [ ] Installer compiled and tested
-  [ ] First 3 beta testers recruited
+6. POINT DNS AT THE SERVER (registrar's DNS panel):
+       Type A    Host @      Value <YOUR_SERVER_IP>
+       Type A    Host www    Value <YOUR_SERVER_IP>
+   Propagation: minutes to ~1 hour. Continue meanwhile.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SECTION 3 — MONETISATION CHANNELS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+──────────────────────────────────────────────────────────────────
+ PHASE 3 — DEPLOY THE WEBSITE/APP (~30–45 min)
+──────────────────────────────────────────────────────────────────
+7. FOLLOW platform/DEPLOY.md, Steps 2 → 8. It is copy-paste:
+     Step 2  ssh root@<YOUR_SERVER_IP>
+     Step 3  install Docker (one command block)
+     Step 4  open firewall ports 80 + 443
+     Step 5  upload the AscentTerminal folder (scp command given)
+     Step 6  settings file → the SAME .env values from item 3,
+             PLUS  DOMAIN=ascentterminal.com  (Caddy reads it from
+             .env and fetches the HTTPS certificate automatically).
+     Step 7  docker compose up -d   (builds + starts app & Caddy;
+             Caddy fetches the free HTTPS certificate itself)
+     Step 8  verify
+   keys.json + data/ are mounted OUTSIDE the container, so: upload
+   your local keys.json (same scp pattern) or just generate fresh
+   keys ON THE SERVER (DEPLOY.md shows how) — either way new keys /
+   revocations go live instantly, no restart.
 
-Primary
--------
-  1. Whop marketplace (highest crypto-trader density)
-     - List under "Trading Tools" category
-     - Use copy from whop_patreon/whop_ai_prompts.md
+8. GO-LIVE CHECKS at https://ascentterminal.com :
+   □ padlock shows (HTTPS) □ PROOF tab populates after ~30s
+   □ DEMO-KEY REJECTED □ your architect key unlocks everything
+   □ observer key blocked from BOTS □ asset picker + perps work
+   □ wrong key 10× → locked out (the brute-force shield)
 
-  2. Patreon (recurring community revenue)
-     - Three tiers: Follower (free), Trader ($19), Pro ($49)
-     - Use copy from whop_patreon/patreon_setup_prompts.md
+9. CONNECT TRADINGVIEW (optional now, 10 min)
+   Alert → Webhook URL:  https://ascentterminal.com/api/tv-webhook
+   Message:
+   {"symbol":"{{ticker}}","action":"BUY","price":{{close}},
+    "tp":0,"sl":0,"secret":"<TV_WEBHOOK_SECRET>"}
+   → lands in the ALERTS tab with TP/SL lines + ⚡ Execute.
 
-  3. Direct Stripe checkout (own the relationship)
-     - Linked from ascent-terminal.com
-     - Monthly and annual plans
+──────────────────────────────────────────────────────────────────
+ PHASE 4 — OPEN FOR BUSINESS (this week)
+──────────────────────────────────────────────────────────────────
+10. MONETISATION
+   • Whop and/or Patreon: one product per tier —
+       Observer  = signals, charts, indicator panel, Claude's read
+       Operator  = + Strategy Lab backtests + execution bridge
+       Architect = + the bots
+     (ready-made listing copy: whop_patreon/ folder)
+   • Flow per sale: key_gen.py new --tier <their tier> --days 31
+     → DM them the key. Cancel → revoke. Live instantly.
+   • Discord: upload brand/discord-server-icon-512.png + banner;
+     put your real Whop plan IDs in discord/discord_role_sync.py.
 
-Secondary (Q3 2025)
--------------------
-  4. Affiliate programme (10% rev-share, tracked via Whop)
-  5. Group mentoring calls ($99/session, Calendly)
-  6. Strategy pack add-ons ($99 one-off per pack)
+Optional: independent legal review of the documents whenever convenient (review pack: AscentTerminal_legal_for_review.pdf).
+    BEFORE taking money. Non-negotiable.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SECTION 4 — TRAFFIC / GROWTH PLAN
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+12. YOUR RESEARCH PLAN — backtest the 26/7 scalper (Signals tab →
+    🧪), forward paper-test survivors on the BOTS tab for weeks,
+    and only then consider its LIVE mode. The validated EMA30 edge
+    is the product today; the scalper is the lab.
 
-Week 1–2 (pre-launch buzz)
-  • Post 3 back-test result threads on r/algotrading, r/CryptoCurrency
-  • Share equity curve screenshots on Twitter/X with #MEXC #AlgoTrading
-  • DM 20 active traders in target Discord servers
-  • Seed Whop listing with 3 beta-tester reviews
+──────────────────────────────────────────────────────────────────
+ ONGOING
+──────────────────────────────────────────────────────────────────
+• Update the live server later:  scp the changed files up, then
+  `docker compose up -d --build` (DEPLOY.md "Updating" section).
+• Keep forward/forward_paper running daily — your live track record.
+• Watch EXEC settings: EXECUTE_KEY empty = nothing can ever trade.
 
-Week 3–4 (launch week)
-  • "We're live" post across all channels
-  • Launch discount: first 20 subscribers get 20% off for life
-  • YouTube short: 60-sec demo of the bot placing a live trade
-  • Pin Whop listing to top of niche communities
-
-Ongoing (monthly)
-  • Edge-lab report → Patreon post → teaser on Twitter
-  • One Discord AMA per month
-  • Weekly signal recap posted to free tier
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SECTION 5 — REVENUE PROJECTIONS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Month 1:  10 subscribers × $49 = $490 MRR
-  Month 3:  30 subscribers × $49 = $1,470 MRR
-  Month 6:  75 subscribers × $49 = $3,675 MRR
-  Month 12: 150 subscribers × $49 = $7,350 MRR
-
-  Annual target (conservative): $50,000 ARR
-  Annual target (base case):    $88,000 ARR
-
-Note: figures exclude annual plan conversions (+32% per seat) and
-one-off lifetime / add-on sales.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SECTION 6 — RISK REGISTER
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Risk                          Likelihood  Impact  Mitigation
-  ─────────────────────────────────────────────────────────────
-  MEXC API changes              Medium      High    Abstract API calls; monitor changelog
-  Strategy stops working        Medium      High    Monthly walk-forward revalidation
-  Stripe bans account           Low         High    Keep Whop as fallback payment layer
-  Discord bot loses permissions  Low         Medium  Document re-invite steps in HANDOFF
-  VPS goes down                 Low         Medium  UptimeRobot alerts; 1-click redeploy
-  Legal challenge (signal svc)  Low         Medium  DISCLAIMER.md; "educational only" framing
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SECTION 7 — 90-DAY ACTION PLAN
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Week 1
-  ✦ Buy domain, point to VPS
-  ✦ Complete GO_LIVE_STEPS.md checklist
-  ✦ Recruit 3 beta testers from existing network
-
-Week 2
-  ✦ Beta test with real keys + Stripe test mode
-  ✦ Fix any bugs found
-  ✦ Compile and test Windows installer
-
-Week 3
-  ✦ Flip listings to Live on Whop + Patreon
-  ✦ Launch post blitz (see §4)
-  ✦ First revenue
-
-Week 4–8
-  ✦ Onboard first 10 paying subscribers
-  ✦ Weekly check-in with each; gather feedback
-  ✦ Iterate on bot UX based on feedback
-
-Month 3
-  ✦ Monthly edge-lab report
-  ✦ Introduce annual plan
-  ✦ Begin affiliate recruitment
-
-Month 6
-  ✦ Review strategy performance; retrain if needed
-  ✦ Launch lifetime deal to existing subscriber base
-  ✦ Consider second exchange (Bybit / Binance)
+Stuck anywhere → screenshot/paste the error to me and I'll fix it.
+════════════════════════════════════════════════════════════════════
