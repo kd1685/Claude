@@ -1,0 +1,21 @@
+# Ascent Terminal — forward paper tester (systemd unit)
+# Builds the live, timestamped track record for the proof panel.
+# Install (as root, after uploading the AscentTerminal folder to /root):
+#   apt install -y python3-requests   (or: pip3 install requests --break-system-packages)
+#   cp /root/AscentTerminal/forward/ascent-forward.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now ascent-forward
+# Check:   systemctl status ascent-forward     Logs:  journalctl -u ascent-forward -f
+[Unit]
+Description=Ascent Terminal forward paper tester (EMA30 daily live track record)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/AscentTerminal/forward
+ExecStart=/usr/bin/python3 /root/AscentTerminal/forward/forward_paper.py --loop
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target
