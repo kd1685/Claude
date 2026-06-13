@@ -1,0 +1,39 @@
+{
+  "start_date": "2026-06-09",
+  "last_date": "2026-06-09",
+  "equity": 10000.0,
+  "positions": {
+    "BTC_USDT": 0,
+    "ETH_USDT": 0,
+    "SOL_USDT": 0,
+    "BNB_USDT": 0,
+    "XRP_USDT": 0,
+    "DOGE_USDT": 0,
+    "ADA_USDT": 0,
+    "AVAX_USDT": 0,
+    "LINK_USDT": 0,
+    "DOT_USDT": 0,
+    "LTC_USDT": 0,
+    "ATOM_USDT": 0,
+    "UNI_USDT": 0,
+    "NEAR_USDT": 1,
+    "APT_USDT": 0
+  },
+  "prices": {
+    "BTC_USDT": 63297.0,
+    "ETH_USDT": 1687.43,
+    "SOL_USDT": 67.05,
+    "BNB_USDT": 605.1,
+    "XRP_USDT": 1.1659,
+    "DOGE_USDT": 0.08623,
+    "ADA_USDT": 0.1692,
+    "AVAX_USDT": 6.759,
+    "LINK_USDT": 7.981,
+    "DOT_USDT": 0.972,
+    "LTC_USDT": 42.86,
+    "ATOM_USDT": 1.756,
+    "UNI_USDT": 2.506,
+    "NEAR_USDT": 2.137,
+    "APT_USDT": 0.6653
+  }
+}
