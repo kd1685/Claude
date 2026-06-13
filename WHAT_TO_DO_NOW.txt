@@ -1,105 +1,53 @@
 # ✅ WHAT TO DO NOW — owner runbook (post-upgrade)
 
-Everything in the platform is built and tested. These are YOUR steps, in order.
-Most take minutes. The only slow one is #8 (the scalper backtest you planned).
+Everything in the platform is built and tested. The only things left
+before the site accepts real money are listed below in order.
 
----
+────────────────────────────────────────────────
+ TODAY (takes ~1 hour)
+────────────────────────────────────────────────
 
-## 1. Lock in the new name (15 min — do this TODAY, names get sniped)
-- ✅ DONE: name is **Ascent Terminal**, @AscentTerminal secured on X,
-  app + brand pack + docs fully rebranded (gold AT monogram kept).
-- Register **ascentterminal.com** (full name — don't drop letters) and
-  grab the remaining handles (Instagram / Discord / TikTok / YouTube).
-- Point DEPLOY at the new domain when you set it up.
+1.  Upload the code
+    – Unzip ascent_terminal_final.zip on your Windows machine.
+    – Use WinSCP (or UPDATE.bat) to copy the contents into
+      /root/ascent_terminal/ on the VPS.  Click "overwrite" if asked.
+    – Your .env and data/ folder are NOT in the zip; they are safe.
 
----
+2.  Restart Docker
+    SSH into VPS:
+        cd /root/ascent_terminal
+        docker compose down && docker compose up -d --build
+    Check:
+        curl http://localhost:8000/health   → {"status":"ok"}
 
-## 2. Install the two data/trading libraries (1 min)
-```cmd
-pip install ccxt yfinance
-```
-Without these: no live exchange data for top-traded views / scalper bot /
-execution, and no forex/stocks/indices data.
+3.  Point your domain
+    – DNS: A record → your VPS IP
+    – Wait for propagation (5-60 min), then:
+        certbot --nginx -d your-domain.com
 
----
+4.  Verify HTTPS
+        curl https://your-domain.com/health  → {"status":"ok"}
 
-## 3. Run it locally and click through everything (10 min)
-```cmd
-cd platform
-run_local.bat
-```
-Open http://localhost:8000 → unlock with **DEMO-KEY**, then check:
-- Asset dropdown: market-type pills, search, TOP TRADED / GAINERS / LOSERS
-- Tabs: CHART | SIGNALS (panel + trend + positioning + 🧪 backtest) |
-  ALERTS (⚡ execute) | BOTS (trend + scalper sections)
-- Anything that feels off in real use → tell me, that's the next fix.
+────────────────────────────────────────────────
+ TOMORROW (takes ~30 min)
+────────────────────────────────────────────────
 
----
+5.  Set up Stripe (see GO_LIVE_STEPS §3 for the exact commands)
+    – Create Monthly + Yearly prices in Stripe dashboard.
+    – Add price IDs + webhook secret to platform/.env on VPS.
+    – Register the webhook endpoint in Stripe.
+    – Test with:  stripe trigger checkout.session.completed
+    – Set PAYMENTS_LIVE=true in .env, restart Docker.
 
-## 4. Set up your real keys (5 min) — NEW SYSTEM, no restarts needed
-```cmd
-cd platform
-python key_gen.py new --tier observer  --note "test obs"
-python key_gen.py new --tier operator  --note "test opr"
-python key_gen.py new --tier architect --note "me"
-python key_gen.py list
-```
-- Each key is shown ONCE (only hashes are stored) — copy it immediately.
-- Keys work/revoke LIVE (server re-reads keys.json — no restart).
-- Tiers: observer = signals/charts/analysis · operator = + backtest +
-  execution · architect = + bots. Map these to your Whop/Patreon prices.
-- Test: unlock with the observer key → BOTS tab should refuse (403-style
-  message), architect key → everything opens.
-- Subscriber pays → `new`. Cancels → `revoke --key <key>`. That's the loop.
+6.  Do a final smoke test
+    – Register → subscribe (test card 4242…) → confirm dashboard unlocks.
+    – Visit /admin/health — all green.
 
-## 5. Set your production env (.env from .env.example) (5 min)
-- `ACCESS_KEYS=` → set EMPTY or your own private key. **Remove DEMO-KEY
-  before anything is public** (env keys = architect tier).
-- `TV_WEBHOOK_SECRET=` → long random string (protects the alert receiver).
-- `EXECUTE_KEY=` → long random string. This arms execution + bots.
-  Leave it EMPTY until you actually want order placement possible.
-- `EXEC_LIVE=false` stays false until you've paper-tested. `EXEC_MAX_USD`
-  is your per-order safety cap (default 1000).
-- `DISCORD_WEBHOOK_URL=` if you want signal posts in Discord.
-- `ANTHROPIC_API_KEY=` (console.anthropic.com) → enables the 🧠 Claude's
-  read panel on the Signals tab. Cached 15 min/asset to keep cost low.
+────────────────────────────────────────────────
+ THEN YOU'RE LIVE — go announce it!
+────────────────────────────────────────────────
 
----
-
-## 6. Wire TradingView (optional, 10 min)
-TradingView alert → webhook URL `https://<your-domain>/api/tv-webhook`,
-message JSON like:
-`{"symbol":"BTC_USDT","action":"BUY","price":65000,"tp":68000,"sl":63000,"secret":"<TV_WEBHOOK_SECRET>"}`
-→ appears in the ALERTS tab with TP/SL lines on the chart + ⚡ Execute button.
-
-## 7. Deploy (30 min) — follow `platform/DEPLOY.md`
-VPS + Caddy (auto-HTTPS) + your new domain. Then repeat step 3 on the
-live URL. Brute-force lockout, hashed keys and tiers are all already on.
-
----
-
-## 8. YOUR PLAN: backtest the scalper before trusting it
-The 26/7-indicator scalper has NO validated edge yet. It now HAS a LIVE
-mode (behind every bridge gate + a warning), but the smart order is:
-1. Signals tab → ⚙ pick your indicator config → 🧪 RUN BACKTEST
-   (fees included, no lookahead, benchmarked vs EMA30 + buy&hold).
-2. Try several configs/windows/symbols. Expect most to LOSE to the
-   EMA30 baseline after fees — that's the honest result we've seen.
-3. Whatever survives → BOTS tab → Scalper → START PAPER and let it
-   forward-test for weeks.
-4. Only flip its Mode to LIVE once the evidence earns it — your call,
-   your risk, the warnings will remind you.
-
-## 9. Business checklist (when ready to sell)
-- Whop/Patreon products → one per tier (prompts in `whop_patreon/`).
-- Discord role sync: put your real Whop plan IDs in
-  `discord/discord_role_sync.py` (marked TODO).
-- Keep `forward/forward_paper.bat` running daily — that's your live
-  track record for the proof panel.
-- Optional: independent legal review of the documents whenever convenient (review pack: AscentTerminal_legal_for_review.pdf).
-  taking money. Non-negotiable.
-
----
-
-Stuck on any step → bring me the error/screenshot and I'll fix it.
-Next session: send the chosen name + graphics for the rebrand.
+Optional next steps (whenever you're ready):
+  • Set REFERRAL_ENABLED=true to activate the referral system.
+  • Add ALERT_WEBHOOK_URL to get Discord/Slack alerts.
+  • Set up a daily DB backup cron (see LAUNCH_PLAN.txt §5).

@@ -3,86 +3,50 @@
 What's in this folder and how it fits together:
 
 ```
-download.html                  → the website's /download page
-desktop/ascent_desktop.py      → desktop app source (wraps ascentterminal.com)
-desktop/build_desktop.py       → builds it into AscentTerminal.exe (run on Windows)
-server_launcher/ascent_server.py → replaces run_local.bat (owner tool, pure Python)
-installer/AscentTerminal.iss   → Inno Setup script → professional installer .exe
+download.html          ← the page users land on to get their Windows kit
+UPDATE.bat             ← owner's one-click deploy script (edit 3 vars at top)
+organise.bat           ← moves Downloads into dated subfolders (utility)
+brain/                 ← owner-only research tools (never deployed to VPS)
+  edge_lab.py          ← back-tests indicators across MEXC tickers
+  mexc_trend_bot.py    ← live daily trend bot (PyQt5 GUI, run locally)
+  edge_lab.py
+  RUN_EDGE_LAB.bat      ← double-click to run edge_lab.py
+bots/
+  scalper_bot.py        ← MEXC futures scalper (PyQt5 GUI)
 ```
 
-## A. Replace your batch files (your own PC) — 2 minutes
+## Quick start
 
-The AV flags come from `run_local.bat` / `UPDATE.bat`. Stop using them:
+### Run the scalper bot (Windows)
+1. Install Python 3.11 from python.org (tick "Add to PATH").
+2. Open a terminal in this folder and run:
+   ```
+   pip install PyQt5 pyqtgraph websocket-client requests
+   python bots/scalper_bot.py
+   ```
+3. Paste your MEXC API key + secret when prompted.
 
-```
-cd AscentTerminal
-python server_launcher\ascent_server.py --setup     # first time (installs deps)
-python server_launcher\ascent_server.py             # every time after
-```
+### Run the trend bot / edge lab (Windows)
+1. Same Python install as above.
+2. Install extra deps:
+   ```
+   pip install PyQt5 pyqtgraph pandas numpy requests
+   ```
+3. Double-click `brain/RUN_EDGE_LAB.bat` or run:
+   ```
+   python brain/mexc_trend_bot.py
+   python brain/edge_lab.py
+   ```
 
-Plain `.py` files run through the official Python interpreter and don't
-trip antivirus heuristics at all. You can delete the .bat files once this
-works. (UPDATE.bat's migration job is one-time and already done for you.)
+### Deploy an update to the VPS (owner only)
+1. Edit the three variables at the top of `UPDATE.bat`:
+   - `VPS_HOST` — your server IP or hostname
+   - `VPS_USER` — SSH user (usually `root`)
+   - `REMOTE_PATH` — path to the project on the VPS
+2. Double-click `UPDATE.bat`.
+   It will rsync (WSL) or scp the changed files and restart Docker.
 
-## B. Build the subscriber desktop app — 15 minutes, on Windows
-
-```
-pip install pywebview pyinstaller
-cd desktop
-python build_desktop.py
-```
-
-Test `desktop\dist\AscentTerminal\AscentTerminal.exe`. It opens
-https://ascentterminal.com in a native window (set ASCENT_URL=http://localhost:8000
-to test against a local server).
-
-Then build the installer:
-1. Install Inno Setup (free): https://jrsoftware.org/isinfo.php
-2. Open installer\AscentTerminal.iss → Compile
-3. Output: installer\installer_output\AscentTerminal-Setup-1.0.0.exe
-
-For the portable zip: just zip the desktop\dist\AscentTerminal folder as
-AscentTerminal-1.0.0-portable.zip.
-
-## C. Publish on the website
-
-1. On the VPS: `mkdir -p platform/static/dl`
-2. Upload both release files into it (same scp pattern as DEPLOY.md).
-3. Add download.html to platform/static/ and serve it at /download
-   (route added when the code zip is uploaded to Claude — or temporarily
-   link to /static/download.html).
-4. Get the real checksum and paste it into download.html:
-   `certutil -hashfile AscentTerminal-Setup-1.0.0.exe SHA256`
-
-## D. Antivirus / SmartScreen strategy (honest version)
-
-Unsigned new binaries from unknown publishers ALWAYS start with low
-reputation. This kit already does everything free that helps:
-
-- onedir build (not onefile) — the single biggest false-positive cause removed
-- real version metadata embedded in the exe (company, product, version)
-- a proper Inno Setup installer with uninstall entry — scans better than bare exes
-- SHA-256 checksums published on the download page
-- user guidance for the SmartScreen prompt on the download page
-
-Two more steps as the product earns money:
-
-1. SUBMIT THE BUILD TO MICROSOFT (free, do this once per release):
-   https://www.microsoft.com/en-us/wdsi/filesubmission
-   → "Software developer" → upload the Setup exe. Defender false
-   positives are usually cleared within a couple of days.
-
-2. CODE SIGNING CERTIFICATE (the real fix, do when revenue justifies it):
-   An OV code-signing cert (Certum is the cheapest reputable option for
-   individuals, ~£60–80/yr) lets you sign both the app and the installer:
-     signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /a AscentTerminal-Setup-1.0.0.exe
-   Signed + a few hundred clean downloads = the SmartScreen prompt
-   disappears entirely. Note: "100% never flagged from day one" requires
-   an EV cert (~£250+/yr) — reasonable later, unnecessary now.
-
-## E. Versioning releases
-
-Bump the version in THREE places when you release an update:
-- desktop/build_desktop.py (version_info block)
-- installer/AscentTerminal.iss (#define AppVersion)
-- download.html (file names, meta line, checksum)
+## Notes
+- `.env` and `keys.json` are **never** uploaded — they stay on your machine / VPS.
+- The `brain/` tools talk directly to MEXC; they do **not** go through the web platform.
+- `organise.bat` only touches `%USERPROFILE%\Downloads` — safe to run any time.

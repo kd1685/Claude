@@ -1,96 +1,96 @@
-╔══════════════════════════════════════════════════════════════════════╗
-║           ASCENT TERMINAL — LAUNCH PLAN (next 30 days)             ║
-╚══════════════════════════════════════════════════════════════════════╝
+════════════════════════════════════════════════════════════════════
+ ASCENT TERMINAL — LAUNCH PLAN
+════════════════════════════════════════════════════════════════════
 
-OWNER   : you
-PRODUCT : Ascent Terminal  (ascentterminal.com)
-GOAL    : first 50 paying subscribers inside 30 days
+This is a plain-English checklist of everything that needs to happen
+before the site goes live to paying customers.  Tick each item off
+as you complete it.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- WEEK 1 — GO LIVE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+────────────────────────────────────────────────────────────────────
+ PHASE 1 — SERVER (do today, ~30 min)
+────────────────────────────────────────────────────────────────────
 
-Day 1  (today)
-  ☐ Upload code to VPS via UPDATE.bat
-  ☐ Smoke-test /health endpoint
-  ☐ Confirm dashboard loads for a test login
-  ☐ Post "going live tomorrow" teaser in Discord
+[ ] 1.1  Upload the code to the VPS
+         – unzip ascent_terminal_final.zip
+         – copy contents into /root/ascent_terminal/ (overwrite)
+         – your .env and data/ are untouched
 
-Day 2  (Stripe live keys)
-  ☐ Swap Stripe test → live keys in .env
-  ☐ Register webhook (checkout.session.completed etc.)
-  ☐ Do one real £1 purchase to confirm end-to-end
-  ☐ Enable Stripe Customer Portal (for self-serve cancels)
+[ ] 1.2  Rebuild and restart services
+         docker compose down && docker compose up -d --build
+         curl http://localhost:8000/health   → must return {"status":"ok"}
 
-Day 3  (soft launch)
-  ☐ Announce in Discord — free-tier users get 48-hr full access
-  ☐ Post in any trading subreddits you're active in
-  ☐ DM your top 10 most-engaged Discord members personally
+[ ] 1.3  Check logs for errors
+         docker compose logs -f --tail 50
 
-Day 4-5  (content)
-  ☐ Record a 90-second screen-capture demo (OBS, no editing needed)
-  ☐ Post clip to Twitter/X, TikTok, YouTube Shorts
-  ☐ Pin the video in Discord #announcements
+────────────────────────────────────────────────────────────────────
+ PHASE 2 — DOMAIN & SSL (do today, ~20 min)
+────────────────────────────────────────────────────────────────────
 
-Day 6-7  (iterate)
-  ☐ Check error logs — fix anything that broke for real users
-  ☐ Reply to every piece of feedback personally
+[ ] 2.1  DNS: point your domain's A record to the VPS IP
+         (changes propagate in 5-60 min)
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- WEEK 2 — CONTENT MACHINE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[ ] 2.2  Install Nginx (if not present):
+         apt install nginx
 
-  • Post one trade breakdown per day (chart + P&L screenshot)
-    Format:  "Setup → Entry → Exit → What I learned"
-    Platforms: Twitter/X, Discord #trade-journal
+[ ] 2.3  Paste the Nginx server block from UPDATE_NOTES.md §2 into
+         /etc/nginx/sites-available/ascent
+         ln -s /etc/nginx/sites-available/ascent /etc/nginx/sites-enabled/
+         nginx -t && systemctl reload nginx
 
-  • Launch a "founding member" offer:
-      First 20 subs lock in £X/mo forever  (use Stripe coupon)
+[ ] 2.4  Get SSL cert:
+         apt install certbot python3-certbot-nginx
+         certbot --nginx -d your-domain.com
+         certbot renew --dry-run   ← confirm auto-renewal works
 
-  • Ask 3 happy free-tier users for a written testimonial.
-    Put them on the landing page.
+[ ] 2.5  Verify HTTPS works:  https://your-domain.com/health
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- WEEK 3 — PAID ACQUISITION (small test)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+────────────────────────────────────────────────────────────────────
+ PHASE 3 — STRIPE (do tomorrow, ~30 min)
+────────────────────────────────────────────────────────────────────
 
-  Budget: £50 test spend
+[ ] 3.1  Create products & prices in Stripe dashboard
+         – "Ascent Terminal Monthly"  (e.g. $29/month)
+         – "Ascent Terminal Yearly"   (e.g. $249/year)
+         Copy both price IDs.
 
-  Option A — Reddit Ads
-    Target: r/Daytrading, r/algotrading, r/UKInvesting
-    Ad: "Free tier available — see live edge lab results"
+[ ] 3.2  Add to platform/.env on VPS:
+         STRIPE_PRICE_MONTHLY=price_xxxx
+         STRIPE_PRICE_YEARLY=price_yyyy
 
-  Option B — Twitter/X Ads
-    Promote your best-performing organic tweet
-    Target: followers of @MEXC_Global, @crypto trading accounts
+[ ] 3.3  Add webhook endpoint in Stripe dashboard:
+         URL: https://your-domain.com/api/stripe/webhook
+         Events: checkout.session.completed
+                 customer.subscription.updated
+                 customer.subscription.deleted
+                 invoice.payment_failed
+         Copy the signing secret → STRIPE_WEBHOOK_SECRET in .env
 
-  Measure: cost-per-free-signup, then free-to-paid conversion rate.
-  Kill anything with CPL > £5.
+[ ] 3.4  Test locally:
+         stripe listen --forward-to localhost:8000/api/stripe/webhook
+         stripe trigger checkout.session.completed
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- WEEK 4 — REVIEW & DOUBLE DOWN
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[ ] 3.5  Set PAYMENTS_LIVE=true in .env, restart services.
 
-  ☐ Pull metrics:
-      signups / actives / paid / churn / MRR
+────────────────────────────────────────────────────────────────────
+ PHASE 4 — SMOKE TEST (after each phase)
+────────────────────────────────────────────────────────────────────
 
-  ☐ Kill the lowest-performing acquisition channel
-  ☐ Double spend / effort on the best one
+[ ] 4.1  Register a new account, verify email arrives
+[ ] 4.2  Subscribe (use Stripe test card 4242 4242 4242 4242)
+[ ] 4.3  Confirm dashboard unlocks after payment
+[ ] 4.4  Check at least one live price updates in the UI
+[ ] 4.5  Log in as admin, visit /admin/health — all green
+[ ] 4.6  Trigger a test alert email
 
-  ☐ Survey churned free-users (1 question email):
-      "What would have made you subscribe?"
+────────────────────────────────────────────────────────────────────
+ PHASE 5 — LAUNCH
+────────────────────────────────────────────────────────────────────
 
-  ☐ Ship the #1 feature request from paying users
+[ ] 5.1  Set REFERRAL_ENABLED=true if you want the referral system live
+[ ] 5.2  Post launch announcement (Twitter/X, Discord, Reddit, etc.)
+[ ] 5.3  Monitor docker compose logs -f for the first hour
+[ ] 5.4  Set up a cron to back up data/ascent.db daily:
+         0 3 * * * cp /root/ascent_terminal/platform/data/ascent.db \
+                      /root/backups/ascent_$(date +\%Y\%m\%d).db
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- 30-DAY NORTH STAR METRIC
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Target : 50 paid subscribers
-  Floor  : 20 paid subscribers (break-even on VPS + tools)
-  Stretch: 100 paid subscribers
-
-  Track daily in a simple spreadsheet:
-    date | new_signups | new_paid | total_paid | MRR
-
-  Review every Sunday morning. Adjust the plan; keep the goal.
+════════════════════════════════════════════════════════════════════
