@@ -1,59 +1,79 @@
-"""
-Ascent Terminal — desktop client.
+"""ascent_desktop.py — Desktop client for Ascent Terminal.
 
-A lightweight native window wrapping the hosted terminal at
-https://ascentterminal.com (override with the ASCENT_URL env var,
-e.g. http://localhost:8000 for local development).
+Opens a native window (via pywebview) pointed at the configured Ascent
+Terminal server URL.  The URL and API key can be set via environment
+variables or a local config file.
 
-Build to .exe with:  python build_desktop.py   (see that file)
-Requires:            pip install pywebview
+Usage:
+    python ascent_desktop.py [--url https://ascentterminal.com] [--api-key AT-xxx]
 """
+
+from __future__ import annotations
+
+import argparse
+import json
 import os
 import sys
+from pathlib import Path
 
-APP_NAME = "Ascent Terminal"
-DEFAULT_URL = "https://ascentterminal.com/app"
-MIN_W, MIN_H = 1100, 720
-
-
-def fatal(msg: str) -> None:
-    """Show a native error box (no console needed) and exit."""
-    try:
-        import ctypes
-        ctypes.windll.user32.MessageBoxW(0, msg, APP_NAME, 0x10)
-    except Exception:
-        print(msg, file=sys.stderr)
+try:
+    import webview  # type: ignore
+except ImportError:
+    print("pywebview is required: pip install pywebview", file=sys.stderr)
     sys.exit(1)
+
+CONFIG_FILE = Path.home() / ".ascent" / "config.json"
+
+DEFAULT_URL = "https://ascentterminal.com"
+
+
+def _load_config() -> dict:
+    try:
+        return json.loads(CONFIG_FILE.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_config(cfg: dict) -> None:
+    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
 
 
 def main() -> None:
-    url = os.environ.get("ASCENT_URL", DEFAULT_URL).strip() or DEFAULT_URL
+    parser = argparse.ArgumentParser(description="Ascent Terminal Desktop")
+    parser.add_argument("--url", default=None, help="Server URL")
+    parser.add_argument("--api-key", default=None, help="API key")
+    args = parser.parse_args()
 
-    try:
-        import webview
-    except ImportError:
-        fatal(
-            "The desktop runtime is missing.\n\n"
-            "If you are running from source:  pip install pywebview\n"
-            "If you installed the app, please reinstall it."
-        )
-        return
+    cfg = _load_config()
 
-    window = webview.create_window(
-        APP_NAME,
-        url,
-        width=1440,
-        height=900,
-        min_size=(MIN_W, MIN_H),
-        background_color="#070707",
-        confirm_close=False,
-        text_select=True,
-        zoomable=True,
+    url = (
+        args.url
+        or os.getenv("ASCENT_URL")
+        or cfg.get("url")
+        or DEFAULT_URL
     )
+    api_key = args.api_key or os.getenv("ASCENT_API_KEY") or cfg.get("api_key", "")
 
-    # private_mode=False -> cookies/localStorage persist between launches,
-    # so the access key and indicator settings survive restarts.
-    webview.start(private_mode=False)
+    # Persist for next launch
+    cfg.update({"url": url})
+    if api_key:
+        cfg["api_key"] = api_key
+    _save_config(cfg)
+
+    # Append API key as query param so the web app can auto-authenticate
+    if api_key and "?" not in url:
+        url = f"{url}?api_key={api_key}"
+
+    webview.create_window(
+        title="Ascent Terminal",
+        url=url,
+        width=1400,
+        height=900,
+        resizable=True,
+        min_size=(800, 600),
+    )
+    webview.start(debug=False)
 
 
 if __name__ == "__main__":

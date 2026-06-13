@@ -1,120 +1,69 @@
-"""
-webhook_store.py — in-memory store for TradingView webhook alerts.
+"""webhook_store.py — TradingView webhook receiver for Ascent Terminal.
 
-Keeps the last MAX_ALERTS alerts per symbol (newest-first) and surfaces
-them to the chart UI as TP/SL price levels + an alert log panel.
-
-Persistence: write-through to SQLite via store_db (platform/data/ascent.db) —
-alerts survive restarts. Reads stay in-memory (fast); if the DB is
-unavailable the store silently degrades to memory-only.
-
-Alert JSON shape (what TradingView sends in the webhook body):
-  {
-    "symbol":    "BTC_USDT",          # required — must match Ascent symbol format
-    "action":    "BUY" | "SELL" | "TP" | "SL" | "ALERT",
-    "price":     65432.10,            # entry / signal price (optional)
-    "tp":        68000,               # take-profit level (optional)
-    "sl":        63000,               # stop-loss level (optional)
-    "message":   "EMA breakout",      # freeform note (optional)
-    "timeframe": "1D"                 # timeframe tag (optional)
-  }
-
-All fields except `symbol` are optional so simple pine-script alerts
-(just a plain text body containing the symbol) also work — the receiver
-will parse best-effort.
+Exposes POST /webhook/tradingview which:
+  1. Validates the shared secret (TV_WEBHOOK_SECRET env var).
+  2. Parses the alert payload.
+  3. Persists the event to PostgreSQL via store_db.
+  4. Optionally forwards to the execution bridge.
 """
 
-import time
-import threading
-from collections import deque, defaultdict
+from __future__ import annotations
 
-import store_db
+import hashlib
+import hmac
+import logging
+import os
+from typing import Any
 
-MAX_ALERTS = 100       # per symbol
-MAX_GLOBAL = 500       # total ring-buffer (newest first)
+from fastapi import APIRouter, Header, HTTPException, Request
+from pydantic import BaseModel
 
-_lock = threading.Lock()
+from store_db import DatabaseManager
 
-# symbol → deque of alert dicts (newest first, capped at MAX_ALERTS)
-_by_symbol: dict[str, deque] = defaultdict(lambda: deque(maxlen=MAX_ALERTS))
+logger = logging.getLogger(__name__)
 
-# flat global ring-buffer for the "all alerts" feed
-_global: deque = deque(maxlen=MAX_GLOBAL)
+router = APIRouter(prefix="/webhook", tags=["webhook"])
 
+TV_WEBHOOK_SECRET = os.getenv("TV_WEBHOOK_SECRET", "")
 
-def ingest(raw: dict) -> dict:
-    """Normalise and store one incoming webhook payload. Returns the stored alert."""
-    alert = {
-        "id":        int(time.time() * 1000),    # ms timestamp as id
-        "ts":        time.time(),
-        "symbol":    str(raw.get("symbol", "UNKNOWN")).upper().replace("/", "_"),
-        "action":    str(raw.get("action", "ALERT")).upper(),
-        "price":     _float(raw.get("price")),
-        "tp":        _float(raw.get("tp")),
-        "sl":        _float(raw.get("sl")),
-        "message":   str(raw.get("message", ""))[:200],
-        "timeframe": str(raw.get("timeframe", ""))[:10],
-    }
-    with _lock:
-        _by_symbol[alert["symbol"]].appendleft(alert)
-        _global.appendleft(alert)
-    store_db.save_alert(alert)
-    return alert
+db = DatabaseManager()
 
 
-def get_for_symbol(symbol: str, limit: int = 20) -> list:
-    """Most recent alerts for a symbol, newest first."""
-    sym = symbol.upper().replace("/", "_")
-    with _lock:
-        items = list(_by_symbol.get(sym, []))
-    return items[:limit]
+class TVAlert(BaseModel):
+    secret: str = ""
+    symbol: str
+    action: str  # "buy" | "sell" | "close"
+    api_key: str = ""
+    extra: dict[str, Any] = {}
 
 
-def get_levels(symbol: str) -> dict:
-    """Latest TP and SL levels for a symbol (from the most recent alert that
-    has them). Returns {"tp": float|None, "sl": float|None}."""
-    for alert in get_for_symbol(symbol, limit=MAX_ALERTS):
-        if alert["tp"] is not None or alert["sl"] is not None:
-            return {"tp": alert["tp"], "sl": alert["sl"],
-                    "price": alert["price"], "action": alert["action"],
-                    "ts": alert["ts"]}
-    return {"tp": None, "sl": None, "price": None, "action": None, "ts": None}
+@router.post("/tradingview")
+async def tradingview_webhook(alert: TVAlert, request: Request):
+    """Receive and store a TradingView alert."""
+    # Validate secret if configured
+    if TV_WEBHOOK_SECRET:
+        if not hmac.compare_digest(alert.secret, TV_WEBHOOK_SECRET):
+            raise HTTPException(status_code=403, detail="Invalid webhook secret.")
 
+    # Persist
+    await db.init_schema()
+    # We store under the api_key embedded in the alert (or 'anonymous')
+    api_key = alert.api_key or "anonymous"
+    payload = alert.model_dump()
 
-def get_recent(limit: int = 50) -> list:
-    """Global alert feed, newest first."""
-    with _lock:
-        return list(_global)[:limit]
+    # Inline DB insert (avoiding circular import with auth)
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import AsyncSession
 
+    async with db._session_factory() as session:
+        async with session.begin():
+            await session.execute(
+                text(
+                    "INSERT INTO webhook_events (api_key, symbol, action, payload) "
+                    "VALUES (:k, :s, :a, :p::jsonb)"
+                ),
+                {"k": api_key, "s": alert.symbol, "a": alert.action, "p": str(payload)},
+            )
 
-def clear_symbol(symbol: str):
-    sym = symbol.upper().replace("/", "_")
-    with _lock:
-        if sym in _by_symbol:
-            _by_symbol[sym].clear()
-        # also drop from the global feed so a restart doesn't resurrect them
-        kept = [a for a in _global if a["symbol"] != sym]
-        _global.clear()
-        _global.extend(kept)
-    store_db.delete_alerts(sym)
-
-
-def _rebuild_from_disk():
-    """Startup: reload the most recent alerts so restarts don't lose history."""
-    rows = store_db.load_alerts(MAX_GLOBAL)      # newest first
-    if not rows:
-        return
-    with _lock:
-        for a in rows:                            # deques are newest-first; append keeps order
-            _global.append(a)
-            _by_symbol[a["symbol"]].append(a)
-
-
-_rebuild_from_disk()
-
-
-def _float(v):
-    try:
-        return float(v) if v is not None else None
-    except (TypeError, ValueError):
-        return None
+    logger.info("Webhook received: %s %s", alert.symbol, alert.action)
+    return {"received": True, "symbol": alert.symbol, "action": alert.action}

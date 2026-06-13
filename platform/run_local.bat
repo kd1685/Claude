@@ -1,37 +1,22 @@
 @echo off
-cd /d "%~dp0"
+REM run_local.bat — Start Ascent Terminal locally on Windows (no Docker)
+REM
+REM Requirements: Python 3.11+ in PATH, pip installed
+REM
+REM Usage: double-click this file or run from a terminal.
 
-echo ============================================================
-echo  Installing dependencies (first run only takes a minute)...
-echo ============================================================
-pip install -r requirements.txt
+echo [Ascent Terminal] Checking Python...
+python --version >nul 2>&1
 if errorlevel 1 (
-    echo.
-    echo  ERROR: pip install failed. Make sure Python is installed and on PATH.
-    echo  Download Python from https://www.python.org/downloads/
+    echo ERROR: Python not found. Install Python 3.11+ from https://python.org
     pause
     exit /b 1
 )
 
-echo.
-echo ============================================================
-echo  Freeing port 8000 if something is already using it...
-echo ============================================================
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000 " ^| findstr "LISTENING" 2^>nul') do (
-    echo  Killing PID %%a on port 8000...
-    taskkill /PID %%a /F >nul 2>&1
-)
-timeout /t 1 /nobreak >nul
+echo [Ascent Terminal] Installing dependencies...
+pip install -r requirements.txt --quiet
 
-set ACCESS_KEYS=DEMO-KEY
-echo.
-echo ============================================================
-echo  Ascent Terminal starting...
-echo  Open in your browser:   http://localhost:8000
-echo  Unlock live signals with the access key:   DEMO-KEY
-echo  (First load fetches history for the proof panel - give it ~30s)
-echo  Press Ctrl+C here to stop.
-echo ============================================================
-echo.
-python -m uvicorn app:app --port 8000
+echo [Ascent Terminal] Starting server on http://localhost:8000
+uvicorn auth:app --host 0.0.0.0 --port 8000 --reload
+
 pause

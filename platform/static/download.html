@@ -1,260 +1,70 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Download — Ascent Terminal</title>
-<meta name="description" content="Download the Ascent Terminal desktop app for Windows, or use the terminal directly in your browser.">
-<!-- ============================================================
-     ASCENT TERMINAL — DOWNLOAD PAGE
-     Serve at /download. Put release files in platform/static/dl/
-     and update the two href="/dl/..." links + the SHA-256 value
-     (get it with:  certutil -hashfile AscentTerminal-Setup-1.0.0.exe SHA256 )
-     ============================================================ -->
-<link rel="canonical" href="https://ascentterminal.com/download">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="Ascent Terminal">
-<meta property="og:url" content="https://ascentterminal.com/download">
-<meta property="og:title" content="Download Ascent Terminal for Windows">
-<meta property="og:description" content="The Ascent Terminal desktop app — the full terminal in a fast native window. Windows 10/11, or use it in any browser.">
-<meta property="og:image" content="https://ascentterminal.com/brand/og-card.png">
-<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:site" content="@AscentTerminal">
-<meta name="twitter:title" content="Download Ascent Terminal for Windows">
-<meta name="twitter:description" content="The Ascent Terminal desktop app — the full terminal in a fast native window. Windows 10/11, or use it in any browser.">
-<meta name="twitter:image" content="https://ascentterminal.com/brand/og-card.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,450;0,500;0,600;1,400&display=swap" rel="stylesheet">
-<link rel="icon" type="image/svg+xml" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="%23f3d985"/><stop offset=".5" stop-color="%23d9b54a"/><stop offset="1" stop-color="%23a07c1f"/></linearGradient></defs><path fill="url(%23g)" d="M30 6 8 58h10l4-11h14l-3-9H25l7-19 13 39h10L34 6z"/><rect x="40" y="10" width="18" height="8" rx="2" fill="url(%23g)"/><rect x="46" y="10" width="7" height="26" rx="2" fill="url(%23g)"/></svg>'>
-<style>
-:root{--bg:#070707;--panel:#12100b;--line:rgba(217,181,74,.16);--line-strong:rgba(217,181,74,.34);
---gold:#d9b54a;--gold-hi:#f3d985;--gold-deep:#a07c1f;--ink:#ece5d3;--ink-dim:#9d957f;--ink-faint:#6d6757;
---green:#3ddc97;--display:'Chakra Petch',sans-serif;--body:'IBM Plex Sans',sans-serif;--max:1080px}
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16.5px;line-height:1.65;-webkit-font-smoothing:antialiased}
-::selection{background:rgba(217,181,74,.35)}
-a{color:inherit;text-decoration:none}
-h1,h2,h3,.eyebrow{font-family:var(--display)}
-.wrap{max-width:var(--max);margin:0 auto;padding:0 28px}
-.eyebrow{font-size:.74rem;letter-spacing:.28em;text-transform:uppercase;color:var(--gold);font-weight:600}
-.flow{position:fixed;inset:0;z-index:-2;background:radial-gradient(1100px 600px at 70% -10%,rgba(217,181,74,.07),transparent 60%),var(--bg)}
-.flow::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(115deg,transparent 0 110px,rgba(217,181,74,.022) 110px 112px)}
-header{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);background:rgba(7,7,7,.78);border-bottom:1px solid var(--line)}
-.nav{display:flex;align-items:center;gap:30px;height:68px}
-.brand{display:flex;align-items:center;gap:12px}
-.brand .mark{width:34px;height:34px;filter:drop-shadow(0 0 10px rgba(217,181,74,.35))}
-.brand b{font-family:var(--display);font-weight:700;letter-spacing:.14em;font-size:.92rem}
-.nav-links{margin-left:auto;display:flex;gap:24px;font-size:.86rem;color:var(--ink-dim)}
-.nav-links a:hover{color:var(--gold-hi)}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;font-family:var(--display);font-weight:600;font-size:.85rem;letter-spacing:.08em;padding:13px 26px;border-radius:9px;border:1px solid var(--line-strong);color:var(--gold-hi);transition:.18s;background:transparent;cursor:pointer}
-.btn:hover{border-color:var(--gold);background:rgba(217,181,74,.08)}
-.btn.solid{background:linear-gradient(135deg,var(--gold-hi),var(--gold) 55%,var(--gold-deep));color:#171204;border:none;box-shadow:0 4px 24px rgba(217,181,74,.28)}
-.btn.solid:hover{filter:brightness(1.08)}
-.hero{padding:84px 0 50px;text-align:center}
-.hero h1{font-size:clamp(2rem,4vw,3rem);font-weight:700}
-.hero h1 .gold{background:linear-gradient(110deg,var(--gold-hi),var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
-.hero p{color:var(--ink-dim);max-width:34rem;margin:18px auto 0}
-.cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;padding:30px 0 70px}
-.card{border:1px solid var(--line);border-radius:16px;padding:32px 28px;background:linear-gradient(170deg,rgba(23,20,16,.9),rgba(10,9,7,.9));display:flex;flex-direction:column;position:relative}
-.card.hot{border-color:var(--line-strong);box-shadow:0 0 50px rgba(217,181,74,.12)}
-.card .flag{position:absolute;top:-12px;left:28px;background:linear-gradient(135deg,var(--gold-hi),var(--gold));color:#171204;font-family:var(--display);font-size:.62rem;font-weight:700;letter-spacing:.16em;padding:4px 12px;border-radius:99px}
-.card .ico{width:44px;height:44px;border:1px solid var(--line-strong);border-radius:10px;display:grid;place-items:center;color:var(--gold-hi);background:rgba(217,181,74,.06);margin-bottom:18px}
-.card h2{font-size:1.05rem;letter-spacing:.06em;margin-bottom:8px}
-.card p{font-size:.9rem;color:var(--ink-dim);margin-bottom:20px}
-.card .meta{font-size:.74rem;color:var(--ink-faint);margin:-10px 0 20px;font-family:var(--display);letter-spacing:.08em}
-.card .btn{margin-top:auto}
-.note{border:1px solid var(--line);border-radius:14px;background:rgba(18,16,11,.6);padding:26px 28px;margin-bottom:18px}
-.note h3{font-size:.95rem;margin-bottom:10px;letter-spacing:.04em}
-.note p,.note li{font-size:.9rem;color:var(--ink-dim)}
-.note ol{padding-left:20px;display:grid;gap:6px}
-.hash{font-family:'Courier New',monospace;font-size:.78rem;color:var(--gold-hi);background:rgba(217,181,74,.07);border:1px solid var(--line);border-radius:8px;padding:10px 14px;word-break:break-all;margin-top:10px}
-.req{display:flex;gap:26px;flex-wrap:wrap;font-size:.82rem;color:var(--ink-faint);padding:8px 0 70px}
-.req b{color:var(--ink-dim);font-family:var(--display);font-weight:600;letter-spacing:.06em}
-footer{border-top:1px solid var(--line);padding:34px 0;font-size:.8rem;color:var(--ink-faint);display:flex;justify-content:center;gap:8px;flex-wrap:wrap;text-align:center}
-footer a{color:var(--ink-dim)}footer a:hover{color:var(--gold-hi)}
-@media (max-width:900px){.cards{grid-template-columns:1fr}.nav-links{display:none}}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ascent Terminal — Download Desktop Client</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #0d1117;
+            color: #e6edf3;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+        .card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 2.5rem 3rem;
+            max-width: 560px;
+            width: 100%;
+            text-align: center;
+        }
+        h1 { font-size: 1.8rem; margin-bottom: 0.5rem; color: #58a6ff; }
+        .subtitle { color: #8b949e; margin-bottom: 2rem; font-size: 0.95rem; }
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 1.75rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            text-decoration: none;
+            margin: 0.4rem;
+            transition: opacity 0.15s;
+        }
+        .btn:hover { opacity: 0.85; }
+        .btn-win  { background: #0078d4; color: #fff; }
+        .btn-mac  { background: #3c3c3c; color: #fff; }
+        .btn-lin  { background: #e95420; color: #fff; }
+        .divider  { border: none; border-top: 1px solid #30363d; margin: 2rem 0; }
+        .note     { color: #8b949e; font-size: 0.85rem; line-height: 1.6; }
+        code      { background: #21262d; padding: 0.15rem 0.4rem; border-radius: 4px;
+                    font-family: monospace; font-size: 0.9em; }
+    </style>
 </head>
 <body>
-<div class="flow" aria-hidden="true"></div>
-
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <defs>
-  <!-- main metal: lit from the top-left -->
-  <linearGradient id="auA" x1="0.1" y1="0" x2="0.9" y2="1">
-    <stop offset="0"    stop-color="#fdf6d8"/>
-    <stop offset="0.28" stop-color="#f0d489"/>
-    <stop offset="0.55" stop-color="#d4ab4f"/>
-    <stop offset="0.82" stop-color="#a87e26"/>
-    <stop offset="1"    stop-color="#6e5316"/>
-  </linearGradient>
-  <linearGradient id="auT" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0"    stop-color="#f6e6ae"/>
-    <stop offset="0.45" stop-color="#cfa64a"/>
-    <stop offset="0.8"  stop-color="#9a7322"/>
-    <stop offset="1"    stop-color="#634a13"/>
-  </linearGradient>
-  <!-- extrusion side-faces: deep bronze -->
-  <linearGradient id="auDeep" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0" stop-color="#7a5a1e"/>
-    <stop offset="1" stop-color="#3c2c0c"/>
-  </linearGradient>
-  <!-- arrow: polished cream -->
-  <linearGradient id="auArrow" x1="0" y1="1" x2="1" y2="0">
-    <stop offset="0" stop-color="#eed896"/>
-    <stop offset="0.6" stop-color="#fbf0c6"/>
-    <stop offset="1" stop-color="#fffdf2"/>
-  </linearGradient>
-  <!-- diagonal sheen sweep, clipped to the glyphs -->
-  <linearGradient id="auSheen" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0"    stop-color="#ffffff" stop-opacity="0"/>
-    <stop offset="0.42" stop-color="#ffffff" stop-opacity="0"/>
-    <stop offset="0.5"  stop-color="#fffbe8" stop-opacity="0.38"/>
-    <stop offset="0.58" stop-color="#ffffff" stop-opacity="0"/>
-    <stop offset="1"    stop-color="#ffffff" stop-opacity="0"/>
-  </linearGradient>
-  <filter id="auBlurXL" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="26"/></filter>
-  <filter id="auBlurS"  x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="7"/></filter>
-  <clipPath id="auGlyphs">
-    <path d="M470 238 H965 V322 H470 Z"/>
-    <path d="M804 322 H888 V692 H804 Z"/>
-    <path d="M400 75 L715 950 H609 L400 369 L191 950 H85 Z"/>
-    <path d="M281 700 H519 L550 786 H250 Z"/>
-  </clipPath>
-</defs>
-    <symbol id="atMark" viewBox="0 0 1024 1024">
-
-<!-- ambient glow underlay -->
-<g filter="url(#auBlurXL)" opacity="0.45">
-  <path d="M470 238 H965 V322 H470 Z M804 322 H888 V692 H804 Z" fill="#c79a31"/>
-  <path d="M400 75 L715 950 H609 L400 369 L191 950 H85 Z" fill="#d9b54a"/>
-  <path d="M281 700 H519 L550 786 H250 Z" fill="#d9b54a"/>
-</g>
-
-<!-- ═ T — extrusion depth, then face ═ -->
-<g transform="translate(15,12)">
-  <path d="M470 238 H965 V322 H470 Z" fill="url(#auDeep)"/>
-  <path d="M804 322 H888 V692 H804 Z" fill="url(#auDeep)"/>
-</g>
-<path d="M470 238 H965 V322 H470 Z" fill="url(#auT)"/>
-<path d="M804 322 H888 V692 H804 Z" fill="url(#auT)"/>
-<!-- T edge light: top of the bar + left of the stem -->
-<path d="M474 243 H960" stroke="#fff6d4" stroke-width="7" opacity="0.75" stroke-linecap="round"/>
-<path d="M808 326 V686" stroke="#fff0bd" stroke-width="5" opacity="0.4" stroke-linecap="round"/>
-<!-- T bottom shade lines (grounding) -->
-<path d="M474 318 H960" stroke="#4a370e" stroke-width="4" opacity="0.45"/>
-<path d="M884 326 V688" stroke="#4a370e" stroke-width="4" opacity="0.4"/>
-
-<!-- ═ A — extrusion depth, then face ═ -->
-<g transform="translate(16,13)">
-  <path d="M400 75 L715 950 H609 L400 369 L191 950 H85 Z" fill="url(#auDeep)"/>
-  <path d="M281 700 H519 L550 786 H250 Z" fill="url(#auDeep)"/>
-</g>
-<path d="M400 75 L715 950 H609 L400 369 L191 950 H85 Z" fill="url(#auA)"/>
-<path d="M281 700 H519 L550 786 H250 Z" fill="url(#auA)"/>
-
-<!-- A specular edges: bright along the lit (left/top) sides -->
-<path d="M398 96 L106 922" stroke="#fff8de" stroke-width="9" opacity="0.6" stroke-linecap="round"/>
-<path d="M408 100 L460 246" stroke="#fff8de" stroke-width="7" opacity="0.4" stroke-linecap="round"/>
-<path d="M286 706 H512" stroke="#fff3c8" stroke-width="6" opacity="0.5" stroke-linecap="round"/>
-<!-- A shaded inner (right) edges -->
-<path d="M404 380 L600 930" stroke="#4a370e" stroke-width="6" opacity="0.4" stroke-linecap="round"/>
-<path d="M258 778 H540" stroke="#4a370e" stroke-width="5" opacity="0.4"/>
-
-<!-- diagonal sheen sweep across both glyphs -->
-<rect x="0" y="0" width="1024" height="1024" fill="url(#auSheen)" clip-path="url(#auGlyphs)"/>
-
-<!-- ═ ascent arrow in the counter ═ -->
-<g filter="url(#auBlurS)" opacity="0.65">
-  <path d="M300 648 L368 572 L404 606 L458 518" stroke="#f7e7b4" stroke-width="30" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-</g>
-<path d="M300 648 L368 572 L404 606 L458 518" stroke="url(#auArrow)" stroke-width="23"
-      fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M481 478 L411 489 L452 545 Z" fill="url(#auArrow)"/>
-<!-- arrow underside shade for lift -->
-<path d="M305 655 L370 583" stroke="#7a5a1e" stroke-width="6" opacity="0.35" stroke-linecap="round"/>
-</symbol>
-</svg>
-
-<header>
-  <div class="wrap nav">
-    <a class="brand" href="/" aria-label="Ascent Terminal home">
-      <svg class="mark" aria-hidden="true"><use href="#atMark"/></svg>
-      <b>ASCENT TERMINAL</b>
-    </a>
-    <nav class="nav-links" aria-label="Main">
-      <a href="/">Home</a><a href="/#pricing">Pricing</a><a href="/#faq">FAQ</a>
-    </nav>
-    <a class="btn" href="/app" style="margin-left:14px">Open in browser</a>
-  </div>
-</header>
-
-<main>
-  <section class="hero wrap">
-    <span class="eyebrow">Download</span>
-    <h1>Ascent Terminal, <span class="gold">on your desktop.</span></h1>
-    <p>The same terminal as the web app in a fast native window — your access key, layouts and indicator settings remembered between sessions.</p>
-  </section>
-
-  <section class="wrap cards">
-    <div class="card hot">
-      <span class="flag">RECOMMENDED</span>
-      <div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5.5 10.5 4.4v7.1H3zM12.5 4.1 21 3v8.5h-8.5zM3 13.5h7.5v7.1L3 19.5zM12.5 13.5H21V21l-8.5-1.1z"/></svg></div>
-      <h2>Windows installer</h2>
-      <p>One-click setup with Start-menu and desktop shortcuts, plus a clean uninstaller. Windows 10 / 11, 64-bit.</p>
-      <p class="meta">v1.0.0 · ~25 MB · .EXE INSTALLER</p>
-      <a class="btn solid" href="/dl/AscentTerminal-Setup-1.0.0.exe" download>Download for Windows</a>
-    </div>
-
     <div class="card">
-      <div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/></svg></div>
-      <h2>Portable (zip)</h2>
-      <p>No installation — unzip anywhere and run <span style="color:var(--gold-hi)">AscentTerminal.exe</span>. Handy for USB sticks or locked-down machines.</p>
-      <p class="meta">v1.0.0 · ~25 MB · .ZIP</p>
-      <a class="btn" href="/dl/AscentTerminal-1.0.0-portable.zip" download>Download portable</a>
-    </div>
+        <h1>Ascent Terminal</h1>
+        <p class="subtitle">Desktop Client — connect to your self-hosted platform</p>
 
-    <div class="card">
-      <div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14 0 18M12 3c-3 3.5-3 14 0 18"/></svg></div>
-      <h2>Web — no download</h2>
-      <p>Everything works in a modern browser on desktop, tablet and mobile. Just unlock with your access key.</p>
-      <p class="meta">CHROME · EDGE · FIREFOX · SAFARI</p>
-      <a class="btn" href="/app">Open the terminal</a>
-    </div>
-  </section>
+        <a href="/static/downloads/AscentTerminal-win.zip"  class="btn btn-win">⊞ Windows</a>
+        <a href="/static/downloads/AscentTerminal-mac.zip"  class="btn btn-mac"> macOS</a>
+        <a href="/static/downloads/AscentTerminal-linux.tar.gz" class="btn btn-lin">🐧 Linux</a>
 
-  <section class="wrap" style="padding-bottom:10px">
-    <div class="note">
-      <h3>Seeing "Windows protected your PC"?</h3>
-      <p>New apps from small publishers earn Microsoft SmartScreen's trust over time, so early downloads can show this prompt. It doesn't mean anything was detected — it means the file is new. To continue:</p>
-      <ol>
-        <li>Click <b style="color:var(--ink)">More info</b> on the blue prompt.</li>
-        <li>Check the app name reads <b style="color:var(--ink)">Ascent Terminal</b>, then click <b style="color:var(--ink)">Run anyway</b>.</li>
-        <li>Optionally verify the file is genuine with the checksum below before running.</li>
-      </ol>
-    </div>
-    <div class="note">
-      <h3>Verify your download (SHA-256)</h3>
-      <p>In PowerShell run <span style="color:var(--gold-hi)">Get-FileHash AscentTerminal-Setup-1.0.0.exe</span> and confirm it matches:</p>
-      <div class="hash">REPLACE-WITH-REAL-CHECKSUM-AFTER-BUILDING — certutil -hashfile AscentTerminal-Setup-1.0.0.exe SHA256</div>
-    </div>
-  </section>
+        <hr class="divider">
 
-  <section class="wrap req">
-    <span><b>OS</b> &nbsp;Windows 10/11 64-bit</span>
-    <span><b>RAM</b> &nbsp;4 GB minimum</span>
-    <span><b>NETWORK</b> &nbsp;Internet connection required</span>
-    <span><b>ACCOUNT</b> &nbsp;Any Ascent Terminal access key</span>
-  </section>
-</main>
-
-<footer>
-  <span>© <span id="yr">2026</span> Ascent Terminal</span> ·
-  <a href="/legal/terms">Terms</a> · <a href="/legal/privacy">Privacy</a> · <a href="/legal/disclaimer">Risk disclaimer</a> · <a href="/privacy-tools">Manage your data</a> ·
-  <a href="mailto:support@ascentterminal.com">support@ascentterminal.com</a>
-</footer>
-<script>document.getElementById('yr').textContent=new Date().getFullYear();</script>
+        <p class="note">
+            After downloading, extract the archive and run <code>AscentTerminal</code>.<br><br>
+            On first launch you will be prompted for your server URL and API key.<br><br>
+            You can also set them via environment variables:<br>
+            <code>ASCENT_URL</code> &nbsp;|&nbsp; <code>ASCENT_API_KEY</code>
+        </p>
+    </div>
 </body>
 </html>

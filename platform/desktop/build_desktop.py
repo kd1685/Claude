@@ -1,74 +1,78 @@
-"""
-Build the Ascent Terminal desktop client into a Windows app.
+"""build_desktop.py — PyInstaller build script for Ascent Terminal desktop client.
 
-Run on a Windows machine:
-
-    pip install pywebview pyinstaller
+Usage:
     python build_desktop.py
 
-Output:  dist/AscentTerminal/AscentTerminal.exe   (whole folder is the app)
-
-Why --onedir and not --onefile:
-  onefile exes self-extract to a temp dir at launch — the single biggest
-  trigger of antivirus false positives. onedir starts faster and gets
-  flagged far less. The Inno Setup script in ../installer packages the
-  folder into a single professional installer for distribution.
-
-Optional icon: place icon.ico next to this script (256px multi-size .ico,
-exported from brand/ascent-mark). It is picked up automatically.
+Outputs a standalone executable in dist/AscentTerminal/.
 """
-import os
-import shutil
+
+from __future__ import annotations
+
 import subprocess
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ICON = os.path.join(HERE, "icon.ico")
-
-cmd = [
-    sys.executable, "-m", "PyInstaller",
-    "--noconfirm",
-    "--clean",
-    "--onedir",                      # see note above — do not switch to onefile
-    "--windowed",                    # no console window
-    "--name", "AscentTerminal",
-    os.path.join(HERE, "ascent_desktop.py"),
-]
-if os.path.exists(ICON):
-    cmd += ["--icon", ICON]
-
-# Version metadata makes the exe look (and scan) like real software,
-# not an anonymous binary. PyInstaller reads it from a version file.
-VERSION_FILE = os.path.join(HERE, "version_info.txt")
-with open(VERSION_FILE, "w", encoding="utf-8") as f:
-    f.write("""VSVersionInfo(
-  ffi=FixedFileInfo(filevers=(1, 0, 0, 0), prodvers=(1, 0, 0, 0), mask=0x3f, flags=0x0, OS=0x40004, fileType=0x1, subtype=0x0, date=(0, 0)),
-  kids=[
-    StringFileInfo([StringTable('040904B0', [
-      StringStruct('CompanyName', 'Ascent Terminal'),
-      StringStruct('FileDescription', 'Ascent Terminal desktop client'),
-      StringStruct('FileVersion', '1.0.0.0'),
-      StringStruct('InternalName', 'AscentTerminal'),
-      StringStruct('LegalCopyright', 'Copyright Ascent Terminal'),
-      StringStruct('OriginalFilename', 'AscentTerminal.exe'),
-      StringStruct('ProductName', 'Ascent Terminal'),
-      StringStruct('ProductVersion', '1.0.0.0')])]),
-    VarFileInfo([VarStruct('Translation', [1033, 1200])])
-  ]
+SPEC = """
+# -*- mode: python ; coding: utf-8 -*-
+a = Analysis(
+    ['ascent_desktop.py'],
+    pathex=[],
+    binaries=[],
+    datas=[],
+    hiddenimports=['webview', 'webview.platforms.gtk', 'webview.platforms.winforms'],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
 )
-""")
-cmd += ["--version-file", VERSION_FILE]
+pyz = PYZ(a.pure)
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='AscentTerminal',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='AscentTerminal',
+)
+"""
 
-print("Building:", " ".join(cmd))
-result = subprocess.run(cmd, cwd=HERE)
-if result.returncode != 0:
-    sys.exit("PyInstaller failed — see output above.")
+SPEC_FILE = "AscentTerminal.spec"
 
-out = os.path.join(HERE, "dist", "AscentTerminal")
-print("\nDone.")
-print("App folder :", out)
-print("Run it     :", os.path.join(out, "AscentTerminal.exe"))
-print("\nNext steps:")
-print(" 1. Test the exe on this machine.")
-print(" 2. (Recommended) sign it:  signtool sign /fd SHA256 /a AscentTerminal.exe")
-print(" 3. Build the installer: open ../installer/AscentTerminal.iss in Inno Setup -> Compile.")
+
+def main() -> None:
+    with open(SPEC_FILE, "w") as f:
+        f.write(SPEC)
+    print(f"[build] Wrote {SPEC_FILE}")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "PyInstaller", SPEC_FILE, "--clean", "--noconfirm"],
+        check=False,
+    )
+    if result.returncode == 0:
+        print("[build] Build successful. Output: dist/AscentTerminal/")
+    else:
+        print("[build] Build FAILED.", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

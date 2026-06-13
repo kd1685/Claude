@@ -1,41 +1,48 @@
+version: "3.9"
+
 services:
-  web:
+  app:
     build: .
     restart: unless-stopped
-    env_file:
-      - .env
-    expose:
-      - "8000"
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql://ascent:${DB_PASSWORD}@db:5432/ascent_db
+    depends_on:
+      db:
+        condition: service_healthy
     volumes:
-      # subscriber keys: edit on the host with key_gen.py — the app
-      # hot-reloads this file, no restart needed
-      # alerts / execution log / bot state (SQLite) survive rebuilds
-      - ./data:/app/data
-    networks:
-      - webnet
+      - keys_data:/app/keys.json
 
   caddy:
-    image: caddy:2
+    image: caddy:2-alpine
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
-    environment:
-      - DOMAIN=${DOMAIN}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      # Cloudflare mode (GO_LIVE_STEPS.md §11): origin certificate files
-      - ./certs:/etc/caddy/certs
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - web
-    networks:
-      - webnet
+      - app
+
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ascent
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ascent_db
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ascent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
+  pg_data:
   caddy_data:
   caddy_config:
-
-networks:
-  webnet:
+  keys_data:

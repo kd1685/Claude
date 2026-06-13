@@ -1,250 +1,129 @@
-"""
-exits.py — protective TP/SL exits, server-watched (roadmap item 12, half a).
+"""exits.py — Exit strategy engine for Ascent Terminal.
 
-Makes the TP/SL lines REAL on every exchange ccxt supports: an "exit plan"
-arms a watcher that polls the live price and, the moment TP or SL is touched,
-fires a market SELL for the recorded position size through the SAME execution
-bridge as everything else — every gate intact (EXECUTE_KEY · EXEC_LIVE master
-switch · per-order cap · credentials). Long positions, spot, v1.
+Provides the /exits/evaluate endpoint which, given a current position and
+market data, recommends whether to hold, take partial profit, or exit.
 
-Honest mechanics (also shown in the UI):
-  * This is a SERVER-WATCHED exit, not an order resting on the exchange.
-    If this server is down when price crosses, nothing fires. Native
-    exchange-held TP/SL (OCO) remains the follow-up — it needs per-exchange
-    live verification with real keys (owner task, post-launch).
-  * Trigger = last traded price crossing the level (TP: last ≥ tp,
-    SL: last ≤ sl), checked every POLL_SEC. Fills are market orders, so
-    slippage applies, exactly like a stop-market.
-  * Plans PERSIST and re-arm after a server restart (deliberately the
-    opposite of the bots: a protective stop should not silently vanish
-    because the server rebooted). If the bridge is disarmed (no
-    EXECUTE_KEY), plans show SUSPENDED and the UI says why.
-  * One armed plan per symbol; dragging the chart TP/SL lines moves the
-    armed plan's triggers too (the drag warning says so).
-  * After a trigger attempt fails (exchange error), the plan flips to
-    ERROR and stops retrying — no order-spam loops; re-arm manually.
+Strategies supported:
+  - fixed_tp_sl   : simple take-profit / stop-loss levels
+  - trailing_stop : ATR-based trailing stop
+  - rsi_exit      : exit when RSI crosses overbought threshold
 """
 
-import json
-import os
-import threading
-import time
+from __future__ import annotations
 
-import execution
-import store_db
+import logging
+from typing import Literal
 
-POLL_SEC = 10
-MAX_PLANS = 50
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
-_lock = threading.Lock()
-_plans: dict = {}            # id -> plan dict
-_thread = None
+from auth import require_tier
 
+logger = logging.getLogger(__name__)
 
-def _exec_cfg(owner: str = ""):
-    from app import cfg_for                      # late import (env may change in tests)
-    return cfg_for(owner)
+router = APIRouter(prefix="/exits", tags=["exits"])
 
 
-# ─── lifecycle ────────────────────────────────────────────────────────────────
-
-def start():
-    """Load persisted plans and start the watcher thread (idempotent)."""
-    global _thread
-    _load()
-    with _lock:
-        if _thread and _thread.is_alive():
-            return
-        _thread = threading.Thread(target=_loop, daemon=True, name="apex-exitwatch")
-        _thread.start()
+# ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
 
 
-def _loop():
-    while True:
-        try:
-            _cycle()
-        except Exception:
-            pass                                  # the watcher must never die
-        time.sleep(POLL_SEC)
+class Position(BaseModel):
+    symbol: str
+    side: Literal["long", "short"]
+    entry_price: float
+    current_price: float
+    size: float = 1.0
 
 
-def _cycle():
-    with _lock:
-        armed = [dict(p) for p in _plans.values() if p["status"] == "armed"]
-    if not armed:
-        return
-    cfg = _exec_cfg()
-    if not cfg.get("execute_key"):                # bridge disarmed → suspend, don't fire
-        with _lock:
-            for p in _plans.values():
-                if p["status"] == "armed":
-                    p["status"] = "suspended"
-                    p["note"] = "bridge disarmed (EXECUTE_KEY empty) — re-arms automatically when set"
-            _save()
-        return
-
-    prices = {}
-    for p in armed:
-        key = (p["exchange"], p["symbol"])
-        if key not in prices:
-            prices[key] = _last_price(*key)
-        last = prices[key]
-        if last is None:
-            continue
-        hit = ("TP" if last >= p["tp"] else "SL" if last <= p["sl"] else None) \
-            if (p.get("tp") and p.get("sl")) else \
-            ("TP" if p.get("tp") and last >= p["tp"] else
-             "SL" if p.get("sl") and last <= p["sl"] else None)
-        if not hit:
-            continue
-        _fire(p["id"], hit, last, _exec_cfg(p.get("owner", "")))
+class MarketContext(BaseModel):
+    closes: list[float] = Field(default_factory=list)
+    atr: float | None = None
+    rsi: float | None = None
 
 
-def _fire(plan_id: str, which: str, last: float, cfg: dict):
-    with _lock:
-        p = _plans.get(plan_id)
-        if not p or p["status"] != "armed":
-            return
-        p["status"] = "firing"                    # re-entry guard
-    live = bool(p["live"]) and cfg.get("live_enabled")
-    res = execution.execute({
-        "symbol": p["symbol"], "side": "SELL",
-        "amount": p["qty"], "price": last,
-        "exchange": p["exchange"],
-        "dry_run": not live,
-        "execute_key": cfg["execute_key"],
-        "source": "exitwatch",
-        "tp": p.get("tp"), "sl": p.get("sl"),
-    }, cfg)
-    with _lock:
-        p = _plans.get(plan_id)
-        if not p:
-            return
-        if res.get("status") == "ok":
-            p["status"] = "done"
-            p["note"] = f"{which} hit @ {last} → {res['mode']} SELL filled ({res['detail'][:60]})"
-        else:
-            p["status"] = "error"
-            p["note"] = f"{which} hit @ {last} but SELL failed: {res.get('detail','')[:90]}"
-        p["closed_ts"] = time.time()
-        _save()
+class ExitRequest(BaseModel):
+    position: Position
+    context: MarketContext = MarketContext()
+    strategy: str = "fixed_tp_sl"
+    params: dict = Field(default_factory=dict)
 
 
-def _last_price(exchange: str, symbol: str):
-    try:
-        import ccxt
-        cls = getattr(ccxt, exchange)
-        ex = _clients.setdefault(exchange, cls({"enableRateLimit": True}))
-        t = ex.fetch_ticker(symbol.replace("_", "/"))
-        return float(t.get("last") or t.get("close"))
-    except Exception:
-        return None
+class ExitRecommendation(BaseModel):
+    action: Literal["hold", "partial_exit", "full_exit"]
+    reason: str
+    exit_price: float | None = None
 
 
-_clients: dict = {}
+# ---------------------------------------------------------------------------
+# Strategy implementations
+# ---------------------------------------------------------------------------
 
 
-# ─── public API (called from app.py) ─────────────────────────────────────────
-
-def upsert(symbol: str, qty: float, tp, sl, live: bool, exchange: str, source="manual", owner: str = "") -> dict:
-    """One armed plan per symbol — creating again replaces it."""
-    symbol = symbol.upper().replace("/", "_")
-    if not (qty and qty > 0):
-        return {"ok": False, "error": "qty must be a positive base amount."}
-    if tp is None and sl is None:
-        return {"ok": False, "error": "Provide tp and/or sl."}
-    with _lock:
-        for p in list(_plans.values()):           # replace existing armed plan
-            if p["symbol"] == symbol and p["status"] in ("armed", "suspended"):
-                del _plans[p["id"]]
-        if len(_plans) >= MAX_PLANS:
-            done = [k for k, p in _plans.items() if p["status"] in ("done", "cancelled", "error")]
-            for k in done[:len(_plans) - MAX_PLANS + 1]:
-                del _plans[k]
-            if len(_plans) >= MAX_PLANS:
-                return {"ok": False, "error": f"Plan limit reached ({MAX_PLANS})."}
-        plan = {
-            "id": f"x{int(time.time()*1000)}",
-            "owner": owner,
-            "symbol": symbol, "qty": float(qty),
-            "tp": float(tp) if tp else None, "sl": float(sl) if sl else None,
-            "live": bool(live),
-            "exchange": (exchange or "binance").lower(),
-            "source": source, "status": "armed", "note": "",
-            "created": time.time(),
-        }
-        _plans[plan["id"]] = plan
-        _save()
-        return {"ok": True, "plan": dict(plan)}
+def _fixed_tp_sl(pos: Position, params: dict) -> ExitRecommendation:
+    tp_pct = params.get("tp_pct", 2.0) / 100
+    sl_pct = params.get("sl_pct", 1.0) / 100
+    if pos.side == "long":
+        change = (pos.current_price - pos.entry_price) / pos.entry_price
+        if change >= tp_pct:
+            return ExitRecommendation(action="full_exit", reason="TP reached", exit_price=pos.current_price)
+        if change <= -sl_pct:
+            return ExitRecommendation(action="full_exit", reason="SL hit", exit_price=pos.current_price)
+    else:  # short
+        change = (pos.entry_price - pos.current_price) / pos.entry_price
+        if change >= tp_pct:
+            return ExitRecommendation(action="full_exit", reason="TP reached", exit_price=pos.current_price)
+        if change <= -sl_pct:
+            return ExitRecommendation(action="full_exit", reason="SL hit", exit_price=pos.current_price)
+    return ExitRecommendation(action="hold", reason="Within TP/SL range")
 
 
-def cancel(plan_id: str) -> dict:
-    with _lock:
-        p = _plans.get(plan_id)
-        if not p:
-            return {"ok": False, "error": "Unknown plan."}
-        if p["status"] in ("armed", "suspended", "error"):
-            p["status"] = "cancelled"
-            p["closed_ts"] = time.time()
-            _save()
-        return {"ok": True}
+def _trailing_stop(pos: Position, ctx: MarketContext, params: dict) -> ExitRecommendation:
+    multiplier = params.get("atr_multiplier", 2.0)
+    atr = ctx.atr or params.get("atr", 0)
+    if not atr:
+        return ExitRecommendation(action="hold", reason="ATR unavailable")
+    trail = atr * multiplier
+    if pos.side == "long":
+        stop = pos.current_price - trail
+        if pos.current_price <= stop:
+            return ExitRecommendation(action="full_exit", reason="Trailing stop hit", exit_price=pos.current_price)
+    else:
+        stop = pos.current_price + trail
+        if pos.current_price >= stop:
+            return ExitRecommendation(action="full_exit", reason="Trailing stop hit", exit_price=pos.current_price)
+    return ExitRecommendation(action="hold", reason="Above trailing stop")
 
 
-def update_levels(symbol: str, tp, sl):
-    """Called when chart TP/SL lines are dragged — move the armed triggers."""
-    symbol = symbol.upper().replace("/", "_")
-    with _lock:
-        for p in _plans.values():
-            if p["symbol"] == symbol and p["status"] in ("armed", "suspended"):
-                if tp is not None:
-                    p["tp"] = float(tp)
-                if sl is not None:
-                    p["sl"] = float(sl)
-                _save()
-                return True
-    return False
+def _rsi_exit(pos: Position, ctx: MarketContext, params: dict) -> ExitRecommendation:
+    threshold = params.get("rsi_threshold", 70)
+    rsi = ctx.rsi or params.get("rsi")
+    if rsi is None:
+        return ExitRecommendation(action="hold", reason="RSI unavailable")
+    if pos.side == "long" and rsi >= threshold:
+        return ExitRecommendation(
+            action="partial_exit", reason=f"RSI overbought ({rsi:.1f} >= {threshold})"
+        )
+    return ExitRecommendation(action="hold", reason=f"RSI within range ({rsi:.1f})")
 
 
-def status() -> dict:
-    with _lock:
-        plans = sorted((dict(p) for p in _plans.values()),
-                       key=lambda p: -p["created"])
-        # un-suspend automatically once the bridge is armed again
-        return {"plans": plans[:60], "poll_sec": POLL_SEC,
-                "watching": sum(1 for p in plans if p["status"] == "armed")}
+# ---------------------------------------------------------------------------
+# Route
+# ---------------------------------------------------------------------------
 
 
-def rearm_suspended(cfg_armed: bool):
-    if not cfg_armed:
-        return
-    with _lock:
-        changed = False
-        for p in _plans.values():
-            if p["status"] == "suspended":
-                p["status"] = "armed"
-                p["note"] = ""
-                changed = True
-        if changed:
-            _save()
-
-
-# ─── persistence ──────────────────────────────────────────────────────────────
-
-def _save():
-    try:
-        store_db.save_kv("exit_plans", json.dumps(list(_plans.values())))
-    except Exception:
-        pass
-
-
-def _load():
-    try:
-        raw = store_db.load_kv("exit_plans")
-        if not raw:
-            return
-        with _lock:
-            for p in json.loads(raw):
-                if isinstance(p, dict) and p.get("id"):
-                    _plans[p["id"]] = p
-    except Exception:
-        pass
+@router.post("/evaluate", response_model=ExitRecommendation)
+async def evaluate_exit(
+    req: ExitRequest,
+    _user=Depends(require_tier("scout")),
+):
+    """Evaluate exit strategy for an open position."""
+    strategy = req.strategy
+    if strategy == "fixed_tp_sl":
+        return _fixed_tp_sl(req.position, req.params)
+    if strategy == "trailing_stop":
+        return _trailing_stop(req.position, req.context, req.params)
+    if strategy == "rsi_exit":
+        return _rsi_exit(req.position, req.context, req.params)
+    raise HTTPException(status_code=400, detail=f"Unknown exit strategy: '{strategy}'.")

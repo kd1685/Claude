@@ -1,202 +1,242 @@
-"""
-auth.py — hardened subscriber-key authentication for Ascent Terminal.
+"""auth.py — FastAPI application entry-point for Ascent Terminal.
 
-Security model
-──────────────
-* Keys are NEVER stored in plaintext. keys.json holds SHA-256 hashes only —
-  a leaked keys.json reveals nothing usable. The plaintext key is shown to
-  the owner exactly once, at generation (key_gen.py).
-* Verification is timing-safe: the presented key is hashed and the digest is
-  compared with hmac.compare_digest against stored digests. Hashing first
-  means an attacker cannot probe stored secrets byte-by-byte via timing.
-* Brute force is throttled: failed attempts are counted per client IP in a
-  sliding window; over the limit the IP is locked out (HTTP 429) for a
-  cool-down. Valid keys have 36^20 ≈ 1.3e31 entropy, so online guessing is
-  hopeless even without the limiter — the limiter mainly stops log noise
-  and oracle abuse of /api/check.
-* keys.json hot-reloads on mtime change (checked at most once/second):
-  issuing or revoking a key takes effect immediately — no server restart.
-* Expiry is enforced per-request, not at env-generation time.
-* ACCESS_KEYS env keys still work as a fallback (hashed at startup, never
-  kept in plaintext in memory beyond startup) and map to the architect tier
-  — only the machine owner can set env vars. Remove DEMO-KEY in production.
+Handles:
+  - API-key authentication + tier enforcement
+  - REST endpoints for market data, backtesting, execution, AI analysis
+  - WebSocket hub (real-time market intelligence)
+  - Stripe billing webhooks
+  - Static file serving (download page)
 
-Tiers (hierarchical)
-────────────────────
-  observer  (1) — live signals, charts, indicator panel, macro, alerts feed
-  operator  (2) — + Strategy Lab backtest, execution bridge, alert clearing
-  architect (3) — + bots (trend / scalper control)
+Run with:
+    uvicorn auth:app --host 0.0.0.0 --port 8000
 """
 
+from __future__ import annotations
+
+import asyncio
 import hashlib
 import hmac
 import json
+import logging
 import os
-import threading
 import time
-from collections import deque
+from pathlib import Path
+from typing import Any
 
-KEYS_PATH = os.environ.get(
-    "ASCENT_KEYS",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "keys.json"),
-)
+import stripe
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from ai_analyst import router as ai_router
+from backtest import router as backtest_router
+from execution import router as execution_router
+from market_intel import MarketIntelHub
+from store_db import DatabaseManager
+from webhook_store import router as webhook_router
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+ACCESS_KEYS_RAW = os.getenv("ACCESS_KEYS", "")
+ACCESS_KEYS: set[str] = set(filter(None, ACCESS_KEYS_RAW.split(",")))
+
+KEYS_FILE = Path("keys.json")
+
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRICE_MAP: dict[str, str] = {
+    os.getenv("STRIPE_PRICE_SCOUT", ""): "scout",
+    os.getenv("STRIPE_PRICE_OPERATOR", ""): "operator",
+    os.getenv("STRIPE_PRICE_ARCHITECT", ""): "architect",
+}
+
+if STRIPE_SECRET_KEY:
+    stripe.api_key = STRIPE_SECRET_KEY
 
 
-def _migrate_legacy_keyfile(new_path: str):
-    """One-time move of keys.json from the app root into data/ (directory
-    mounts survive atomic renames; single-file Docker mounts do not — the
-    container otherwise freezes on a stale inode after every key write)."""
-    legacy = os.path.join(os.path.dirname(os.path.abspath(__file__)), "keys.json")
+# ---------------------------------------------------------------------------
+# Key store helpers
+# ---------------------------------------------------------------------------
+
+
+def _load_keys() -> dict[str, dict]:
+    """Load keys.json — returns {} on missing / malformed file."""
     try:
-        if os.path.exists(legacy) and not os.path.exists(new_path):
-            os.makedirs(os.path.dirname(new_path), exist_ok=True)
-            try:
-                os.replace(legacy, new_path)
-            except OSError:                       # cross-device: copy instead
-                import shutil
-                shutil.copy2(legacy, new_path)
-                os.rename(legacy, legacy + ".migrated")
-    except Exception:
-        pass                                      # never block startup on this
+        return json.loads(KEYS_FILE.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
 
 
-_migrate_legacy_keyfile(KEYS_PATH)
+def _save_keys(keys: dict[str, dict]) -> None:
+    KEYS_FILE.write_text(json.dumps(keys, indent=2))
 
 
-TIER_LEVEL = {"observer": 1, "operator": 2, "architect": 3}
-DEFAULT_TIER = "observer"
-
-# Brute-force limiter: per-IP failures in a sliding window.
-FAIL_LIMIT = 10               # failed auths allowed…
-FAIL_WINDOW = 300             # …per 5 minutes…
-LOCKOUT = 900                 # …then locked out for 15 minutes
-_MAX_TRACKED_IPS = 5000
-
-_lock = threading.Lock()
-_keys = {}                    # sha256 hex -> {tier, active, expires, note}
-_env_hashes = {}              # sha256 hex -> tier (from ACCESS_KEYS env)
-_mtime = None
-_last_check = 0.0
-_fails = {}                   # ip -> deque[timestamps]
-_locked = {}                  # ip -> unlock_ts
-
-
-def _digest(key: str) -> str:
-    return hashlib.sha256(key.encode("utf-8", "ignore")).hexdigest()
-
-
-def init_env_keys(raw_csv: str):
-    """Hash the ACCESS_KEYS env fallback once at startup (architect tier)."""
-    global _env_hashes
-    hashes = {}
-    for k in (raw_csv or "").split(","):
-        k = k.strip()
-        if k:
-            hashes[_digest(k)] = "architect"
-    with _lock:
-        _env_hashes = hashes
-
-
-def _reload_if_changed():
-    """Hot-reload keys.json when its mtime changes (checked ≤ 1×/second)."""
-    global _keys, _mtime, _last_check
-    now = time.time()
-    if now - _last_check < 1.0:
-        return
-    _last_check = now
-    try:
-        mt = os.path.getmtime(KEYS_PATH)
-    except OSError:
-        _keys = {}
-        _mtime = None
-        return
-    if mt == _mtime:
-        return
-    try:
-        with open(KEYS_PATH) as f:
-            raw = json.load(f)
-        entries = raw.get("keys", raw) if isinstance(raw, dict) else {}
-        loaded = {}
-        for ident, rec in entries.items():
-            if not isinstance(rec, dict):
-                continue
-            # v2 entries are 64-hex sha256 digests; anything else is treated
-            # as a legacy PLAINTEXT key and hashed on the fly so old files
-            # keep working (key_gen migrates them to hashes on next use).
-            h = ident if (len(ident) == 64 and all(c in "0123456789abcdef" for c in ident.lower())) \
-                else _digest(ident)
-            loaded[h.lower()] = {
-                "tier": rec.get("tier", DEFAULT_TIER) if rec.get("tier") in TIER_LEVEL else DEFAULT_TIER,
-                "active": bool(rec.get("active", True)),
-                "expires": rec.get("expires"),
-                "note": str(rec.get("note", ""))[:100],
-                "addons": {str(k): int(v) for k, v in (rec.get("addons") or {}).items()
-                           if isinstance(v, (int, float))},
-            }
-        _keys = loaded
-        _mtime = mt
-    except Exception:
-        # A corrupt keys.json must not grant OR strip access mid-flight:
-        # keep the last good set in memory.
-        pass
-
-
-def verify(key: str):
-    """Timing-safe key check. Returns {"tier": str} or None.
-    Never raises; never logs the key."""
-    if not key or len(key) > 128:
-        return None
-    with _lock:
-        _reload_if_changed()
-        presented = _digest(key)
-        # hmac.compare_digest over digests: constant-time in digest length,
-        # and the hash step removes any structure an attacker could probe.
-        for stored, rec in _keys.items():
-            if hmac.compare_digest(presented, stored):
-                if not rec.get("active", True):
-                    return None
-                exp = rec.get("expires")
-                if exp and exp < time.strftime("%Y-%m-%d"):
-                    return None
-                return {"tier": rec["tier"], "hash16": presented[:16],
-                        "env": False, "addons": dict(rec.get("addons") or {})}
-        for stored, tier in _env_hashes.items():
-            if hmac.compare_digest(presented, stored):
-                return {"tier": tier, "hash16": presented[:16],
-                        "env": True, "addons": {}}
+def _key_tier(api_key: str) -> str | None:
+    """Return the tier for *api_key* or None if unknown / revoked."""
+    # Env-var keys are architect-tier (legacy / admin)
+    if api_key in ACCESS_KEYS:
+        return "architect"
+    # DEMO key — only active when ACCESS_KEYS env is empty
+    if api_key == "DEMO-KEY" and not ACCESS_KEYS:
+        return "scout"
+    store = _load_keys()
+    entry = store.get(api_key)
+    if entry and entry.get("active", True):
+        return entry.get("tier", "scout")
     return None
 
 
-def tier_ok(rec: dict, min_tier: str) -> bool:
-    return TIER_LEVEL.get((rec or {}).get("tier"), 0) >= TIER_LEVEL.get(min_tier, 99)
+# ---------------------------------------------------------------------------
+# FastAPI app
+# ---------------------------------------------------------------------------
+
+app = FastAPI(title="Ascent Terminal", version="1.0.0")
+
+app.include_router(ai_router)
+app.include_router(backtest_router)
+app.include_router(execution_router)
+app.include_router(webhook_router)
+
+_static = Path("static")
+if _static.is_dir():
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+
+db = DatabaseManager()
+hub = MarketIntelHub()
 
 
-# ─── Brute-force limiter (used by the app middleware) ─────────────────────────
+# ---------------------------------------------------------------------------
+# Auth dependency
+# ---------------------------------------------------------------------------
 
-def is_locked(ip: str) -> float:
-    """Seconds remaining on this IP's lockout, or 0."""
-    with _lock:
-        until = _locked.get(ip, 0)
-        now = time.time()
-        if until > now:
-            return until - now
-        _locked.pop(ip, None)
-        return 0
+TIER_RANK = {"scout": 1, "operator": 2, "architect": 3}
 
 
-def record_failure(ip: str):
-    """Count a failed auth; lock the IP out past the threshold."""
-    now = time.time()
-    with _lock:
-        if len(_fails) > _MAX_TRACKED_IPS:        # bound memory
-            _fails.clear()
-        dq = _fails.setdefault(ip, deque(maxlen=FAIL_LIMIT * 2))
-        dq.append(now)
-        recent = [t for t in dq if now - t <= FAIL_WINDOW]
-        if len(recent) >= FAIL_LIMIT:
-            _locked[ip] = now + LOCKOUT
+class AuthenticatedUser(BaseModel):
+    api_key: str
+    tier: str
 
 
-def record_success(ip: str):
-    with _lock:
-        _fails.pop(ip, None)
+async def get_current_user(x_api_key: str = Header(...)) -> AuthenticatedUser:
+    tier = _key_tier(x_api_key)
+    if tier is None:
+        raise HTTPException(status_code=401, detail="Invalid or revoked API key.")
+    return AuthenticatedUser(api_key=x_api_key, tier=tier)
+
+
+def require_tier(minimum: str):
+    """Dependency factory — raises 403 if user tier is below *minimum*."""
+    async def _check(user: AuthenticatedUser = Depends(get_current_user)):
+        if TIER_RANK.get(user.tier, 0) < TIER_RANK.get(minimum, 99):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Requires '{minimum}' tier or above (you have '{user.tier}').",
+            )
+        return user
+    return _check
+
+
+# ---------------------------------------------------------------------------
+# Health check
+# ---------------------------------------------------------------------------
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "timestamp": int(time.time())}
+
+
+# ---------------------------------------------------------------------------
+# Market data endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/market/snapshot")
+async def market_snapshot(user: AuthenticatedUser = Depends(get_current_user)):
+    """Latest cached market intelligence snapshot."""
+    return hub.latest_snapshot()
+
+
+@app.websocket("/ws/market")
+async def websocket_market(websocket: WebSocket):
+    """Real-time market intelligence stream."""
+    api_key = websocket.query_params.get("api_key", "")
+    tier = _key_tier(api_key)
+    if tier is None:
+        await websocket.close(code=4001)
+        return
+    await hub.connect(websocket, tier)
+    try:
+        while True:
+            await asyncio.sleep(30)  # keep-alive; hub pushes data
+    except WebSocketDisconnect:
+        hub.disconnect(websocket)
+
+
+# ---------------------------------------------------------------------------
+# Stripe billing
+# ---------------------------------------------------------------------------
+
+
+@app.post("/billing/webhook")
+async def stripe_webhook(request: Request):
+    """Handle Stripe subscription lifecycle events."""
+    if not STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(status_code=501, detail="Billing not configured.")
+
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid Stripe signature.")
+
+    etype = event["type"]
+    data = event["data"]["object"]
+
+    if etype in ("customer.subscription.created", "customer.subscription.updated"):
+        price_id = data["items"]["data"][0]["price"]["id"]
+        tier = STRIPE_PRICE_MAP.get(price_id, "scout")
+        customer_id = data["customer"]
+        # Store / update key linked to customer
+        keys = _load_keys()
+        # Find existing key for customer or create a stub
+        for key, entry in keys.items():
+            if entry.get("stripe_customer") == customer_id:
+                entry["tier"] = tier
+                entry["active"] = True
+                break
+        else:
+            import secrets
+            new_key = "AT-" + secrets.token_hex(16)
+            keys[new_key] = {"tier": tier, "active": True, "stripe_customer": customer_id}
+        _save_keys(keys)
+
+    elif etype == "customer.subscription.deleted":
+        customer_id = data["customer"]
+        keys = _load_keys()
+        for entry in keys.values():
+            if entry.get("stripe_customer") == customer_id:
+                entry["active"] = False
+        _save_keys(keys)
+
+    return {"received": True}
+
+
+# ---------------------------------------------------------------------------
+# Download page
+# ---------------------------------------------------------------------------
+
+
+@app.get("/download", response_class=HTMLResponse)
+async def download_page():
+    html_path = Path("static/download.html")
+    if html_path.exists():
+        return HTMLResponse(html_path.read_text())
+    return HTMLResponse("<h1>Download page not found.</h1>", status_code=404)
