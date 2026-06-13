@@ -35,13 +35,17 @@ MAX_GLOBAL = 500       # total ring-buffer (newest first)
 
 _lock = threading.Lock()
 
+# symbol → deque of alert dicts (newest first, capped at MAX_ALERTS)
 _by_symbol: dict[str, deque] = defaultdict(lambda: deque(maxlen=MAX_ALERTS))
+
+# flat global ring-buffer for the "all alerts" feed
 _global: deque = deque(maxlen=MAX_GLOBAL)
 
 
 def ingest(raw: dict) -> dict:
+    """Normalise and store one incoming webhook payload. Returns the stored alert."""
     alert = {
-        "id":        int(time.time() * 1000),
+        "id":        int(time.time() * 1000),    # ms timestamp as id
         "ts":        time.time(),
         "symbol":    str(raw.get("symbol", "UNKNOWN")).upper().replace("/", "_"),
         "action":    str(raw.get("action", "ALERT")).upper(),
@@ -59,6 +63,7 @@ def ingest(raw: dict) -> dict:
 
 
 def get_for_symbol(symbol: str, limit: int = 20) -> list:
+    """Most recent alerts for a symbol, newest first."""
     sym = symbol.upper().replace("/", "_")
     with _lock:
         items = list(_by_symbol.get(sym, []))
@@ -66,6 +71,8 @@ def get_for_symbol(symbol: str, limit: int = 20) -> list:
 
 
 def get_levels(symbol: str) -> dict:
+    """Latest TP and SL levels for a symbol (from the most recent alert that
+    has them). Returns {"tp": float|None, "sl": float|None}."""
     for alert in get_for_symbol(symbol, limit=MAX_ALERTS):
         if alert["tp"] is not None or alert["sl"] is not None:
             return {"tp": alert["tp"], "sl": alert["sl"],
@@ -75,6 +82,7 @@ def get_levels(symbol: str) -> dict:
 
 
 def get_recent(limit: int = 50) -> list:
+    """Global alert feed, newest first."""
     with _lock:
         return list(_global)[:limit]
 
@@ -84,6 +92,7 @@ def clear_symbol(symbol: str):
     with _lock:
         if sym in _by_symbol:
             _by_symbol[sym].clear()
+        # also drop from the global feed so a restart doesn't resurrect them
         kept = [a for a in _global if a["symbol"] != sym]
         _global.clear()
         _global.extend(kept)
@@ -91,11 +100,12 @@ def clear_symbol(symbol: str):
 
 
 def _rebuild_from_disk():
-    rows = store_db.load_alerts(MAX_GLOBAL)
+    """Startup: reload the most recent alerts so restarts don't lose history."""
+    rows = store_db.load_alerts(MAX_GLOBAL)      # newest first
     if not rows:
         return
     with _lock:
-        for a in rows:
+        for a in rows:                            # deques are newest-first; append keeps order
             _global.append(a)
             _by_symbol[a["symbol"]].append(a)
 

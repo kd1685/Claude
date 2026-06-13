@@ -77,6 +77,8 @@ def available() -> bool:
         return _get() is not None
 
 
+# ─── Alerts ────────────────────────────────────────────────────────────────────
+
 def save_alert(a: dict):
     with _lock:
         conn = _get()
@@ -96,6 +98,7 @@ def save_alert(a: dict):
 
 
 def load_alerts(limit: int = 500) -> list:
+    """Newest-first list of alert dicts from disk (for startup rebuild)."""
     with _lock:
         conn = _get()
         if not conn:
@@ -122,6 +125,8 @@ def delete_alerts(symbol: str):
             pass
 
 
+# ─── Execution log ─────────────────────────────────────────────────────────────
+
 _EXEC_KEYS = ("id", "ts", "source", "symbol", "side", "exchange", "order_type",
               "mode", "status", "detail", "price", "amount", "notional", "tp", "sl")
 
@@ -143,6 +148,7 @@ def save_exec(e: dict):
 
 
 def load_exec(limit: int = 200) -> list:
+    """Newest-first list of execution entries from disk (for startup rebuild)."""
     with _lock:
         conn = _get()
         if not conn:
@@ -155,6 +161,8 @@ def load_exec(limit: int = 200) -> list:
             return []
     return [dict(zip(_EXEC_KEYS, r)) for r in rows]
 
+
+# ─── Key-value (bot state / small JSON blobs) ─────────────────────────────────
 
 def save_kv(key: str, value: str):
     with _lock:
@@ -207,7 +215,10 @@ def kv_keys(prefix: str):
             return []
 
 
+# ─── Internals ─────────────────────────────────────────────────────────────────
+
 def _maybe_prune(conn, table: str, keep: int):
+    """Caller holds _lock. Trim old rows every _PRUNE_EVERY inserts."""
     _insert_counts[table] += 1
     if _insert_counts[table] % _PRUNE_EVERY:
         return
