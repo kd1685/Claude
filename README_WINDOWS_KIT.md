@@ -1,63 +1,74 @@
-# Ascent Terminal — Windows Kit
+# Ascent Terminal — Windows kit
 
-This folder contains everything needed to run and manage Ascent Terminal from a
-Windows machine.
-
----
-
-## What's included
-
-```
-tools/
-  DEPLOY_TO_VPS.bat      Deploy latest code to your VPS
-  GENERATE_SECRETS.bat   Generate SECRET_KEY and MEXC keys helper
-  NEW_KEY.bat            Issue a new member API key
-  REVOKE_KEY.bat         Revoke a member API key
-  RUN_TESTS.bat          Run the test suite
-  TEST_DISCORD_WEBHOOK.bat  Send a test Discord alert
-
-brain/
-  RUN_EDGE_LAB.bat       Run the walk-forward parameter optimiser
-
-bots/
-  scalper_bot.py         The scalper bot (give this to members)
-
-installer/
-  AscentTerminal.iss     Inno Setup script — build the Windows installer
-
-server_launcher/
-  ascent_server.py       Thin wrapper — launches platform in a console window
-
-forward/
-  forward_paper.bat      Run paper-trade forward test
-  forward_paper.py       Forward test harness
-```
+What's in this folder and how to run everything on Windows.
 
 ---
 
-## Prerequisites
+## Files
 
-- Python 3.11+ in PATH
-- `pip install -r platform/requirements.txt` already run
-- SSH key configured for your VPS (for DEPLOY_TO_VPS.bat)
-- `.env` file in `platform/` with all secrets filled in
-
----
-
-## Quick start
-
-1. Clone or unzip this repo
-2. `cd platform && pip install -r requirements.txt`
-3. `cp .env.example .env` then fill it in
-4. Run `tools\\GENERATE_SECRETS.bat` to generate a SECRET_KEY
-5. Double-click `tools\\RUN_TESTS.bat` to verify setup
-6. Double-click `server_launcher\\ascent_server.py` (or run via Python) to start locally
+| File | Purpose |
+|---|---|
+| `UPDATE.bat` | Pull latest code + restart the server |
+| `organise.bat` | Tidy the repo: move stray files to the right folders |
+| `brain/RUN_EDGE_LAB.bat` | Launch the signal-research / walk-forward tool |
 
 ---
 
-## Building the Windows installer
+## Quick start (first time)
 
-1. Install [Inno Setup](https://jrsoftware.org/isinfo.php)
-2. Open `installer/AscentTerminal.iss` in Inno Setup
-3. Build → Output is `AscentTerminal-Setup-x.x.x.exe`
-4. Upload to `ascentterminal.com/dl/`
+1. Install **Python 3.10+** from python.org — tick "Add to PATH".
+2. Open a terminal in this folder and run:
+   ```
+   pip install -r requirements.txt
+   ```
+3. Copy `.env.example` to `.env` and fill in `ACCESS_KEY` and
+   `ANTHROPIC_API_KEY`.
+4. Start the server:
+   ```
+   uvicorn platform.main:app --reload
+   ```
+5. Open `http://localhost:8000` in your browser.
+
+---
+
+## UPDATE.bat
+
+Double-click to:
+- Pull the latest commits from GitHub
+- Install any new Python dependencies
+- Restart the server (kills the old uvicorn process first)
+
+The window stays open so you can see any errors.  Close it when
+the server says `Application startup complete`.
+
+---
+
+## organise.bat
+
+If you have stray `.py`, `.bat`, `.md`, or `.txt` files sitting in
+the root that belong in `bots/` or `brain/`, double-click this to
+move them automatically.  It logs every action to
+`organise_log.txt`.
+
+Safe to re-run — it only moves files it recognises by name.
+
+---
+
+## brain/RUN_EDGE_LAB.bat
+
+Launches `brain/edge_lab.py` in an interactive terminal window.
+Edge Lab lets you:
+- Run walk-forward signal research on any MEXC futures pair
+- Backtest the EMA30 trend rule with configurable parameters
+- Export results to CSV
+
+Requires the same Python environment as the main server.
+
+---
+
+## Notes
+
+- All scripts assume Python is on your PATH.
+- If you see `'python' is not recognised`, use `python3` instead,
+  or reinstall Python with "Add to PATH" ticked.
+- The server must be running for the browser UI to work.

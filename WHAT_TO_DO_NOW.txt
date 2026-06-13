@@ -1,37 +1,89 @@
-WHAT TO DO NOW — Ascent Terminal
-=================================
+# ✅ WHAT TO DO NOW — owner runbook (post-upgrade)
 
-You have the full release kit. Here is the shortest path to money in.
+You just pulled the latest AscentTerminal build.  Here's exactly what
+to do next, in order.
 
-1. DEPLOY THE SERVER (30 min)
-   Follow GO_LIVE_STEPS.md exactly.
-   The one-liner setup script does most of it.
+────────────────────────────────────────────────────────────────────
+STEP 1  ·  Verify your .env
+────────────────────────────────────────────────────────────────────
 
-2. FILL IN .ENV (10 min)
-   platform/.env.example has every variable explained.
-   You need: Stripe live key, Whop OAuth, Discord webhook, MEXC API.
+Open .env and confirm these are set:
 
-3. TEST IT (5 min)
-   python3 -m pytest platform/tests/ -v
-   Visit https://ascentterminal.com — landing should load.
-   Log in with your founder key — terminal should load.
+  ACCESS_KEY=<any strong string you want to use as your password>
+  ANTHROPIC_API_KEY=sk-ant-…
 
-4. SET UP STRIPE WEBHOOKS (5 min)
-   Stripe dashboard → Webhooks → Add endpoint
-   URL: https://ascentterminal.com/billing/webhook
-   Copy signing secret → paste into .env → restart app.
+Optional but recommended:
 
-5. SET UP DISCORD (5 min)
-   python3 discord/add_alerts_channel.py
-   This creates the #ascent-alerts channel and wires the webhook.
+  EXECUTE_KEY=<strong string — gates live/paper order execution>
+  DEFAULT_EXCHANGE=mexc
+  USER_CAP_USD=100
 
-6. PUBLISH WHOP LISTING (20 min)
-   Use the copy in whop_patreon/REBRAND_COPY.md
-   Set prices: Observer $15, Operator $39, Architect $89
-   Connect your Stripe account.
+If .env doesn't exist yet:
+  cp .env.example .env
+  nano .env
 
-7. ANNOUNCE (whenever you're ready)
-   Post on X, Discord, Reddit.
-   The landing page is already live — just send people to ascentterminal.com.
+────────────────────────────────────────────────────────────────────
+STEP 2  ·  Install dependencies
+────────────────────────────────────────────────────────────────────
 
-That's it. Once you have 1 paying member, the system is working.
+  pip install -r requirements.txt
+
+You only need to do this once (and after future updates that add deps).
+
+────────────────────────────────────────────────────────────────────
+STEP 3  ·  Start the server
+────────────────────────────────────────────────────────────────────
+
+  uvicorn platform.main:app --reload
+
+Or on Windows, double-click UPDATE.bat (it pulls + restarts in one go).
+
+The server starts on http://localhost:8000 by default.
+
+────────────────────────────────────────────────────────────────────
+STEP 4  ·  Open the terminal
+────────────────────────────────────────────────────────────────────
+
+Go to http://localhost:8000 (or your domain if hosted).
+Enter your ACCESS_KEY.  You should see the full terminal UI.
+
+────────────────────────────────────────────────────────────────────
+STEP 5  ·  Quick sanity checks
+────────────────────────────────────────────────────────────────────
+
+□ CHART tab — pick an asset, candles load
+□ SIGNALS tab — indicator panel populates
+□ AI tab — click "Analyse this setup" — Claude responds
+□ ALERTS tab — webhook URL shown, no errors
+□ BOTS tab — "+ ADD TREND BOT" button visible
+
+If any tab shows an error, check the server console for tracebacks.
+
+────────────────────────────────────────────────────────────────────
+STEP 6  ·  (Optional) Run a paper bot
+────────────────────────────────────────────────────────────────────
+
+1. Click BOTS → + ADD TREND BOT
+2. Set symbol (e.g. BTC/USDT:USDT), timeframe 1d, risk 1%
+3. Leave mode as PAPER
+4. Click START
+5. Check the events log — you should see "waiting for signal" every
+   poll cycle.
+
+────────────────────────────────────────────────────────────────────
+STEP 7  ·  (Optional) Test a webhook
+────────────────────────────────────────────────────────────────────
+
+  curl -X POST http://localhost:8000/api/tv-webhook \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"ALERT","symbol":"BTCUSDT","price":67000}'
+
+Alert should appear in the ALERTS tab within 1–2 seconds.
+
+────────────────────────────────────────────────────────────────────
+SUPPORT
+────────────────────────────────────────────────────────────────────
+
+See GO_LIVE_STEPS.md for full deploy guide.
+See HANDOFF.md for architecture overview.
+See UPDATE_NOTES.md for changelog.

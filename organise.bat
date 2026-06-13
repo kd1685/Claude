@@ -1,76 +1,94 @@
 @echo off
-REM Ascent Terminal — organise release folder
-REM Run this from the root of the release folder to check everything is in place
-
-echo Checking release structure...
+echo Starting organiser...
+echo Log: %USERPROFILE%\Desktop\organise_log.txt
 echo.
 
-IF EXIST platform\app.py (
-    echo [OK] platform/app.py
-) ELSE (
-    echo [MISSING] platform/app.py
+REM ════════════════════════════════════════════════
+REM  organise.bat  —  AscentTerminal  (Windows)
+REM  Move stray files to the right folders
+REM  Safe to re-run; only moves known files.
+REM ════════════════════════════════════════════════
+
+setlocal enabledelayedexpansion
+set LOG=%~dp0organise_log.txt
+set MOVED=0
+set SKIPPED=0
+
+echo [%DATE% %TIME%] organise.bat started >> "%LOG%"
+
+REM ── Create target dirs if missing ───────────────
+if not exist "%~dp0bots" mkdir "%~dp0bots" && echo Created bots/ >> "%LOG%"
+if not exist "%~dp0brain" mkdir "%~dp0brain" && echo Created brain/ >> "%LOG%"
+
+REM ════════════════════════════════════════════════
+REM  Files that belong in  bots/
+REM ════════════════════════════════════════════════
+
+for %%F in (
+    "scalper_bot.py"
+    "rok_bot.py"
+    "grid_bot.py"
+    "dca_bot.py"
+    "arb_bot.py"
+) do (
+    if exist "%~dp0%%~F" (
+        move /Y "%~dp0%%~F" "%~dp0bots\%%~F" >nul
+        echo Moved %%~F  ->  bots/ >> "%LOG%"
+        echo   ✓  %%~F  ->  bots/
+        set /A MOVED+=1
+    ) else (
+        set /A SKIPPED+=1
+    )
 )
 
-IF EXIST platform\.env.example (
-    echo [OK] platform/.env.example
-) ELSE (
-    echo [MISSING] platform/.env.example
+REM ════════════════════════════════════════════════
+REM  Files that belong in  brain/
+REM ════════════════════════════════════════════════
+
+for %%F in (
+    "edge_lab.py"
+    "mexc_trend_bot.py"
+    "swing_backtest.py"
+    "RUN_EDGE_LAB.bat"
+    "edge_lab.bat"
+    "research.py"
+    "backtest.py"
+    "walk_forward.py"
+    "signal_audit.py"
+) do (
+    if exist "%~dp0%%~F" (
+        move /Y "%~dp0%%~F" "%~dp0brain\%%~F" >nul
+        echo Moved %%~F  ->  brain/ >> "%LOG%"
+        echo   ✓  %%~F  ->  brain/
+        set /A MOVED+=1
+    ) else (
+        set /A SKIPPED+=1
+    )
 )
 
-IF EXIST platform\static\index.html (
-    echo [OK] platform/static/index.html
-) ELSE (
-    echo [MISSING] platform/static/index.html
-)
+REM ════════════════════════════════════════════════
+REM  Docs: move stray .md / .txt to docs/ (optional)
+REM  Commented out — uncomment if you want this.
+REM ════════════════════════════════════════════════
 
-IF EXIST platform\static\landing.html (
-    echo [OK] platform/static/landing.html
-) ELSE (
-    echo [MISSING] platform/static/landing.html
-)
+REM if not exist "%~dp0docs" mkdir "%~dp0docs"
+REM for %%F in ("HANDOFF.md" "UPDATE_NOTES.md" "LAUNCH_PLAN.txt") do (
+REM     if exist "%~dp0%%~F" (
+REM         move /Y "%~dp0%%~F" "%~dp0docs\%%~F" >nul
+REM         echo Moved %%~F  ->  docs/ >> "%LOG%"
+REM         echo   moved %%~F  ->  docs/
+REM     )
+REM )
 
-IF EXIST platform\static\download.html (
-    echo [OK] platform/static/download.html
-) ELSE (
-    echo [MISSING] platform/static/download.html
-)
-
-IF EXIST bots\scalper_bot.py (
-    echo [OK] bots/scalper_bot.py
-) ELSE (
-    echo [MISSING] bots/scalper_bot.py
-)
-
-IF EXIST brain\edge_lab.py (
-    echo [OK] brain/edge_lab.py
-) ELSE (
-    echo [MISSING] brain/edge_lab.py
-)
-
-IF EXIST brain\mexc_trend_bot.py (
-    echo [OK] brain/mexc_trend_bot.py
-) ELSE (
-    echo [MISSING] brain/mexc_trend_bot.py
-)
-
-IF EXIST discord\discord_role_sync.py (
-    echo [OK] discord/discord_role_sync.py
-) ELSE (
-    echo [MISSING] discord/discord_role_sync.py
-)
-
-IF EXIST tools\DEPLOY_TO_VPS.bat (
-    echo [OK] tools/DEPLOY_TO_VPS.bat
-) ELSE (
-    echo [MISSING] tools/DEPLOY_TO_VPS.bat
-)
-
-IF EXIST installer\AscentTerminal.iss (
-    echo [OK] installer/AscentTerminal.iss
-) ELSE (
-    echo [MISSING] installer/AscentTerminal.iss
-)
+REM ════════════════════════════════════════════════
+REM  Summary
+REM ════════════════════════════════════════════════
 
 echo.
-echo Structure check complete.
+echo ──────────────────────────────────
+echo  Done.  Moved: !MOVED!   Skipped: !SKIPPED!
+echo  Log: %~dp0organise_log.txt
+echo ──────────────────────────────────
+echo [%DATE% %TIME%] Done. Moved: !MOVED! Skipped: !SKIPPED! >> "%LOG%"
+
 pause

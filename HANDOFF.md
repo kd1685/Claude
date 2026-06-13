@@ -1,115 +1,118 @@
-# HANDOFF — Ascent Terminal
+# Ascent Terminal — Project Handoff (current as of 2026-06-12, launch build)
 
-Everything a new operator needs to take over and run this system.
+## What this project is
 
----
+Ascent Terminal is a self-hosted, single-page crypto trading terminal.
+The user opens a browser tab, enters an access key, and gets:
 
-## What this is
+* Live multi-asset chart (TradingView Lightweight Charts)
+* A 26-indicator signal panel with configurable weights
+* A backtester (EMA30 baseline + custom indicator config)
+* Claude AI commentary tab (uses the owner's Anthropic key)
+* TradingView alert ingestion via webhook
+* Paper + live order execution via CCXT bridge
+* Server-watched TP/SL exit plans
+* Automated bots (EMA30 trend-follower, MEXC scalper)
+* Fear & Greed index, macro/positioning data
 
-Ascent Terminal is a subscription trading platform.  Members pay via Stripe (or Whop /
-Patreon) to access:
-
-- A browser-based terminal with live market data, order-flow, liquidation heatmaps, AI
-  analysis, and forex macro feeds
-- A Python scalper bot they can run locally
-- Discord alerts channel with auto-posted signals
-
-The backend is a single Python (Flask) process behind Caddy, running in Docker on a
-Linux VPS.
+The back-end is a single FastAPI app (`platform/main.py`).
+The front-end is a single HTML file (`platform/static/index.html`).
+All state is in-memory (alerts, orders, bots reset on restart).
 
 ---
 
 ## Repo layout
 
 ```
-platform/       Flask app, Docker, Caddy config
-  app.py        Main application — routes, auth, data feeds
-  billing.py    Stripe checkout + webhook handler
-  auth.py       Whop OAuth + API key auth
-  key_gen.py    CLI to create/revoke member API keys
-  bots.py       Bot config endpoints
-  exits.py      Exit-signal logic
-  indicators.py TA indicators (RSI, MACD, BB, …)
-  exchanges.py  CCXT wrapper (MEXC primary)
-  static/       Landing, terminal, download, privacy HTML pages
-
+.env                     secrets (never committed)
+.gitignore
+requirements.txt         pip deps
+platform/
+  main.py                FastAPI app — all routes
+  static/
+    index.html           entire front-end (one file)
 bots/
-  scalper_bot.py  Standalone bot members download + run locally
-
+  scalper_bot.py         standalone MEXC scalper (run separately)
 brain/
-  edge_lab.py        Walk-forward parameter optimiser
-  mexc_trend_bot.py  Live trend-following bot (server-side)
-  swing_*.py         Swing strategy backtests
-
-discord/
-  discord_role_sync.py  Sync Whop/Patreon roles → Discord
-  discord_post_content.py  Post announcements / signals
-  add_alerts_channel.py    One-time channel setup
-
-forward/
-  forward_paper.py   Paper-trade forward-test harness
-
-tools/              Windows helper .bat scripts
-installer/          Inno Setup script for Windows desktop installer
-server_launcher/    Thin wrapper to launch the platform from a shortcut
-whop_patreon/       Copy + prompt templates for Whop/Patreon listings
-legal/              Terms, Privacy, Disclaimer (Markdown source)
+  edge_lab.py            signal-research / walk-forward tool
+  mexc_trend_bot.py      EMA30 trend-bot for MEXC futures
+  swing_backtest.py      simple daily-bar backtest helper
+  RUN_EDGE_LAB.bat       Windows launcher for edge_lab
 ```
 
 ---
 
-## Credentials you need
+## How to run
 
-| Secret | Where to find it |
-|--------|------------------|
-| `SECRET_KEY` | Regenerate with `python3 -c "import secrets; print(secrets.token_hex(32))"` |
-| `WHOP_CLIENT_ID` + `WHOP_CLIENT_SECRET` | Whop dashboard → Developer |
-| `STRIPE_SECRET_KEY` | Stripe dashboard → API keys |
-| `STRIPE_WEBHOOK_SECRET` | Stripe dashboard → Webhooks |
-| `DISCORD_WEBHOOK_URL` | Discord channel → Integrations → Webhooks |
-| `MEXC_API_KEY` + `MEXC_API_SECRET` | MEXC → API Management |
+1. Copy `.env.example` → `.env`, fill in `ACCESS_KEY` and `ANTHROPIC_API_KEY`.
+2. `pip install -r requirements.txt`
+3. `uvicorn platform.main:app --reload`
+4. Open `http://localhost:8000`, enter your key.
 
-All go in `platform/.env`.
+Full checklist: see `GO_LIVE_STEPS.md`.
 
 ---
 
-## Day-to-day operations
+## Key design decisions
 
-```bash
-# Check everything is up
-docker compose ps
-
-# Follow logs
-docker compose logs -f
-
-# Deploy an update
-git pull && docker compose up -d --build
-
-# Backup member keys
-cp platform/keys.json ~/keys_backup_$(date +%Y%m%d).json
-
-# Add a new member key manually
-python3 platform/key_gen.py --create --tier operator --note "username"
-
-# Revoke a key
-python3 platform/key_gen.py --revoke KEY_VALUE
-```
+| Decision | Reason |
+|---|---|
+| Single HTML file | Zero build step; edit and reload |
+| In-memory state | No DB dependency; simple to host |
+| CCXT for execution | Supports 100+ exchanges; non-custodial |
+| EMA30 daily as the edge | Independently backtested; receipts on PROOF tab |
+| Claude for AI tab | Owner supplies key; responses cached 15 min |
 
 ---
 
-## If something breaks
+## What's working (launch build)
 
-1. `docker compose logs app --tail 50` — check for Python errors
-2. `docker compose logs caddy --tail 20` — check for TLS / proxy errors
-3. `python3 -m pytest platform/tests/ -v` — run the test suite
-4. Check `.env` — a missing or wrong value causes most failures
+- [x] Asset picker: crypto spot + perps, forex, stocks, indices, metals
+- [x] Chart: candles + EMA overlays + TP/SL lines from alerts
+- [x] Signals: 26 indicators, configurable weights, composite score
+- [x] Strategy Lab backtester with equity curve chart
+- [x] AI tab: Claude analysis, settings panel, 15-min cache
+- [x] Alerts: TradingView webhook ingestion, real-time push to UI
+- [x] Execution: paper + live orders via CCXT
+- [x] TP/SL watcher: server-side polling every ~10 s
+- [x] Bots: EMA30 trend bot + MEXC scalper, both in the UI
+- [x] Fear & Greed + macro/positioning cards
+- [x] Indicator settings drawer with presets
+- [x] Watchlist / favourites (localStorage)
+- [x] Mobile-responsive layout
+- [x] Lock screen with TOS checkbox
 
 ---
 
-## Contacts / accounts
+## Known limitations / next steps
 
-- Stripe: your Stripe account
-- Whop: whop.com/ascentterminal
-- Patreon: patreon.com/AscentTerminal
-- X: x.com/AscentTerminal
-- Support email: support@ascentterminal.com
+- State is in-memory → alerts, orders, bots reset on server restart.
+  *Next: SQLite persistence layer.*
+- TP/SL watcher is server-polled, not exchange-native.
+  *Next: native exchange conditional orders via CCXT.*
+- Single-worker server; bots run in background threads.
+  *Next: Celery or asyncio task queue for robustness.*
+- No multi-user support (one ACCESS_KEY, one EXECUTE_KEY).
+  *Next: per-user keys + JWT.*
+
+---
+
+## Environment variables
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `ACCESS_KEY` | yes | gates the UI |
+| `ANTHROPIC_API_KEY` | yes | Claude AI tab |
+| `EXECUTE_KEY` | no | gates /api/execute |
+| `AUTO_EXECUTE` | no | auto-fire BUY/SELL alerts |
+| `DEFAULT_EXCHANGE` | no | ccxt id, default mexc |
+| `USER_CAP_USD` | no | per-order $ cap |
+| `MEXC_API_KEY` | no | MEXC market-data override |
+| `MEXC_API_SECRET` | no | MEXC market-data override |
+
+---
+
+## Updating
+
+Windows: run `UPDATE.bat`
+Linux: `git pull && pip install -r requirements.txt -q && sudo systemctl restart ascent`
