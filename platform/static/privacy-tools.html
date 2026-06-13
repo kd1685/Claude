@@ -1,1 +1,96 @@
-<!doctype html><html><head><title>Privacy Tools</title></head><body>Privacy Tools</body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your data — Ascent Terminal</title>
+<meta name="description" content="Unsubscribe from emails or permanently delete your data — instant and automated.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=IBM+Plex+Sans:wght@400;450;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#070707;--line:rgba(217,181,74,.16);--line-strong:rgba(217,181,74,.34);--gold:#d9b54a;
+--gold-hi:#f3d985;--ink:#ece5d3;--ink-dim:#9d957f;--ink-faint:#6d6757;--green:#3ddc97;
+--display:'Chakra Petch',sans-serif;--body:'IBM Plex Sans',sans-serif}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.65;-webkit-font-smoothing:antialiased}
+.wrap{max-width:640px;margin:0 auto;padding:0 24px}
+header{position:sticky;top:0;backdrop-filter:blur(14px);background:rgba(7,7,7,.8);border-bottom:1px solid var(--line)}
+.nav{display:flex;align-items:center;height:62px}
+.nav b{font-family:var(--display);letter-spacing:.14em;font-size:.88rem}
+.nav a{margin-left:auto;font-size:.84rem;color:var(--ink-dim);text-decoration:none}
+.nav a:hover{color:var(--gold-hi)}
+main{padding:54px 0 90px}
+h1{font-family:var(--display);font-size:1.8rem;margin-bottom:10px}
+.lead{color:var(--ink-dim);margin-bottom:36px}
+.card{border:1px solid var(--line);border-radius:14px;background:rgba(18,16,11,.6);padding:28px;margin-bottom:20px}
+.card h2{font-family:var(--display);font-size:1rem;letter-spacing:.06em;margin-bottom:8px}
+.card p{font-size:.9rem;color:var(--ink-dim);margin-bottom:16px}
+form{display:flex;gap:10px}
+input{flex:1;background:rgba(7,7,7,.6);border:1px solid var(--line-strong);border-radius:9px;color:var(--ink);font-family:var(--body);font-size:.93rem;padding:12px 16px;outline:none}
+input:focus{border-color:var(--gold)}
+button{font-family:var(--display);font-weight:600;font-size:.8rem;letter-spacing:.08em;padding:12px 20px;border-radius:9px;border:1px solid var(--line-strong);color:var(--gold-hi);background:transparent;cursor:pointer;transition:.18s}
+button:hover{border-color:var(--gold);background:rgba(217,181,74,.08)}
+button.danger{border-color:rgba(255,93,108,.4);color:#ff8d9b}
+button.danger:hover{border-color:#ff5d6c;background:rgba(255,93,108,.08)}
+.msg{font-size:.86rem;margin-top:12px;display:none}
+.msg.ok{color:var(--green)}.msg.err{color:#ff8d9b}
+.fine{font-size:.78rem;color:var(--ink-faint)}
+</style>
+</head>
+<body>
+<header><div class="wrap nav"><b>ASCENT TERMINAL</b><a href="/">← back to site</a></div></header>
+<main><div class="wrap">
+  <h1>Your data, your call.</h1>
+  <p class="lead">Both actions below are fully automated — no human reads your address, and our records
+  store it only in encrypted form. See the <a href="/legal/privacy" style="color:var(--gold-hi)">Privacy Policy</a>
+  for the details.</p>
+
+  <div class="card">
+    <h2>📭 Unsubscribe from emails</h2>
+    <p>Removes your address from our mailing list immediately and suppresses it permanently —
+    it cannot be re-added, even by you signing up again.</p>
+    <form id="unsubForm">
+      <input type="email" id="unsubEmail" placeholder="you@example.com" required>
+      <button type="submit">Unsubscribe</button>
+    </form>
+    <div class="msg" id="unsubMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>🗑 Delete everything (right to erasure)</h2>
+    <p>We'll email a confirmation link to the address (valid 24&nbsp;hours). Clicking it revokes any
+    access keys bought with that address, deletes our billing references and mailing-list entry, and
+    permanently suppresses the address. <b style="color:var(--ink)">This cancels your access — it cannot be undone.</b></p>
+    <form id="eraseForm">
+      <input type="email" id="eraseEmail" placeholder="you@example.com" required>
+      <button type="submit" class="danger">Send confirmation link</button>
+    </form>
+    <div class="msg" id="eraseMsg"></div>
+    <p class="fine" style="margin-top:14px">Payment records are retained by our payment processor (Stripe)
+    as required by law. Subscriptions purchased on Whop or Patreon should also be cancelled there to stop billing.</p>
+  </div>
+</div></main>
+<script>
+async function post(url, email, msgEl){
+  const m = document.getElementById(msgEl);
+  m.style.display='block'; m.className='msg'; m.textContent='working…';
+  try{
+    const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email})});
+    const d = await r.json();
+    m.className = 'msg ' + (r.ok ? 'ok':'err');
+    m.textContent = r.ok ? ('✓ ' + (d.message||'done')) : (d.detail||'request failed');
+  }catch(e){ m.className='msg err'; m.textContent='request failed — try again later'; }
+}
+document.getElementById('unsubForm').addEventListener('submit', e=>{
+  e.preventDefault();
+  post('/api/gdpr/unsubscribe', document.getElementById('unsubEmail').value.trim(), 'unsubMsg');
+});
+document.getElementById('eraseForm').addEventListener('submit', e=>{
+  e.preventDefault();
+  if(!confirm('This will permanently revoke any access keys bought with this address. Continue?')) return;
+  post('/api/gdpr/erase', document.getElementById('eraseEmail').value.trim(), 'eraseMsg');
+});
+</script>
+</body>
+</html>
