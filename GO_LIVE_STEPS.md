@@ -155,3 +155,146 @@ Local dev on your PC (no batch files, no AV flags):
 
 Stuck anywhere → screenshot/paste the error and I'll fix it.
 ════════════════════════════════════════════════════════════════════
+
+──────────────────────────────────────────────────────────────────
+ §10  ADDED IN THE FINAL AUDIT (do with §1)
+──────────────────────────────────────────────────────────────────
+• PROXY FIX (in this build's Dockerfile): uvicorn now trusts Caddy's
+  X-Forwarded-For — without it the brute-force lockout treated ALL
+  visitors as one IP (one attacker could lock everyone out). Ships
+  automatically with `docker compose up -d --build`.
+• BACKUPS: platform/backup.sh tars keys.json + data/ + .env nightly.
+    chmod +x /root/AscentTerminal/platform/backup.sh
+    crontab -e   →   0 4 * * * /root/AscentTerminal/platform/backup.sh
+  Copy /root/backups off the box weekly (scp/rclone) — keys.json IS
+  your subscriber base; a dead disk must not be able to take it.
+• MONITORING: free UptimeRobot monitor on
+  https://ascentterminal.com/api/health (5-min checks, email alert) —
+  know the site is down before a customer tells you.
+
+──────────────────────────────────────────────────────────────────
+ §11  CLOUDFLARE IN FRONT (free DDoS/WAF + hides the VPS, ~25 min)
+──────────────────────────────────────────────────────────────────
+Order matters — do the certificate BEFORE flipping the proxy on, and
+the whole thing AFTER the site already works directly (§1–§2).
+
+1. ACCOUNT + SITE: dash.cloudflare.com → Add a site →
+   ascentterminal.com → Free plan. It imports your DNS records —
+   confirm the two A records (@ and www → your VPS IP) are there,
+   but set them to GREY cloud (DNS only) for now.
+2. NAMESERVERS: at your registrar, replace the nameservers with the
+   two Cloudflare gives you. Wait until CF emails "site is active"
+   (minutes to a few hours). Site keeps working as before meanwhile.
+3. ORIGIN CERTIFICATE (the 15-year cert Caddy will serve to CF):
+   CF → SSL/TLS → Origin Server → Create Certificate → defaults
+   (RSA, ascentterminal.com + *.ascentterminal.com, 15 years).
+   Copy the two PEM blocks onto the server:
+       nano /root/AscentTerminal/platform/certs/origin.pem      (cert)
+       nano /root/AscentTerminal/platform/certs/origin-key.pem  (key)
+4. SSL MODE: CF → SSL/TLS → Overview → set "Full (strict)".
+   (Never "Flexible" — that causes redirect loops.)
+5. SWITCH CADDY to the Cloudflare config:
+       cd /root/AscentTerminal/platform
+       cp Caddyfile Caddyfile.direct
+       cp Caddyfile.cloudflare Caddyfile
+       docker compose up -d --force-recreate
+6. FLIP THE PROXY: CF → DNS → set @ and www to ORANGE cloud.
+   https://ascentterminal.com should load with a Cloudflare-issued
+   edge certificate (padlock → cert says Cloudflare/Google Trust).
+7. CF SETTINGS THAT MATTER FOR THIS APP:
+   • SSL/TLS → Edge Certificates → "Always Use HTTPS" = ON
+   • Security → Bots → Bot Fight Mode = OFF  ← important: it can
+     block Stripe/Whop/TradingView webhook POSTs (they're "bots").
+     If you later want it on, first add a WAF skip rule:
+     Security → WAF → Custom rules → "Skip" when URI Path is in
+     {/api/tv-webhook, /api/stripe-webhook, /api/whop-webhook}.
+   • Caching: leave defaults — /api/* responses aren't cached by CF
+     (no cache headers), static assets get cached automatically.
+8. VERIFY REAL-IP SECURITY STILL WORKS: from your PHONE on mobile
+   data, enter a wrong key 10× → phone gets locked out (429) but the
+   site keeps working on your desktop. If BOTH lock out, the proxy
+   chain is misconfigured — check step 5 applied and re-run it.
+9. Notes: SSH/scp still use the raw VPS IP (CF doesn't proxy port 22).
+   The IP was public before today, so treat hiding it as best-effort;
+   the firewall (ufw 22/80/443) is the real protection. The original
+   direct config is kept as Caddyfile.direct — copying it back and
+   grey-clouding DNS reverts everything.
+
+──────────────────────────────────────────────────────────────────
+ §12  ADDED SOLO (no action needed, just know it exists)
+──────────────────────────────────────────────────────────────────
+• /legal/terms, /legal/privacy, /legal/disclaimer now EXIST (the
+  footer links were broken) — branded pages rendered from legal/*.md.
+  Optional: independent legal review of the documents whenever convenient (review pack: AscentTerminal_legal_for_review.pdf).
+• Social cards: brand/og-card.png + OG/Twitter meta on / and
+  /download — your launch tweet now unfurls with a proper gold card.
+  robots.txt + sitemap.xml are served too.
+• TEST SUITE: before every future deploy, from platform/:
+      pip install pytest httpx     (once)
+      python -m pytest tests -q    → expect "12 passed"
+• HANDOFF.md fully rewritten to the current build — replace the copy
+  in your Claude project knowledge with this version.
+
+──────────────────────────────────────────────────────────────────
+ §13  PERSONAL DATA — encryption + automated GDPR (do with §2)
+──────────────────────────────────────────────────────────────────
+1. Generate the data-encryption key and add to .env on the server:
+       python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+       → .env:  DATA_KEY=<that value>
+   Then: docker compose up -d --build  (new dependency: cryptography)
+   KEEP THIS KEY SAFE with your other secrets — losing it makes the
+   stored (encrypted) addresses unreadable; that's the point.
+2. What it does: every stored customer email (mailing list, billing
+   references) is encrypted at rest; key notes and event logs carry
+   anonymous tags instead of addresses; the owner mailing-list
+   endpoint shows a COUNT only. You never see customer data.
+3. Self-service page at /privacy-tools (linked in site footers and
+   every key email): instant unsubscribe (+ permanent suppression),
+   and right-to-erasure via emailed confirmation link — revokes keys,
+   deletes billing refs + mailing entry, suppresses the address.
+   Fully automated; no action from you, ever.
+4. ICO registration (~£50/yr, ico.org.uk, 10 min) — you process
+   Optional: independent legal review of the documents whenever convenient (review pack: AscentTerminal_legal_for_review.pdf).
+5. Sending a mailout later (when you want to email the list): ask
+   Claude for a send script — it decrypts addresses only in memory
+   at send time via privacy.list_addresses().
+
+──────────────────────────────────────────────────────────────────
+ §14  TERMS ACCEPTANCE (already live in this build)
+──────────────────────────────────────────────────────────────────
+• Terminal: first unlock per device requires ticking "I agree to the
+  Terms / Privacy / Disclaimer" on the lock screen; acceptance
+  (version + timestamp, hashed key id only) is recorded server-side.
+  Bumping TERMS_VERSION in app.py re-prompts everyone after a change.
+• Stripe (§3): on each Payment Link ALSO enable "Require customers to
+  accept your terms of service" with URL
+  https://ascentterminal.com/legal/terms — that covers contractual
+  acceptance at purchase, alongside the immediate-supply waiver box.
+• Legal docs finalized: liability carve-outs, AI + experimental
+  features, sanctions, transfers, general provisions; all contacts
+  → support@ascentterminal.com (make sure that inbox forwards!).
+  You also have sales@ (now on the landing footer — partnerships) and
+  contact@ — make sure all three actually deliver somewhere you read.
+  SMTP_FROM stays support@; never publish your personal mrobinson@..
+
+──────────────────────────────────────────────────────────────────
+ §15  tools\ — ONE-CLICK HELPERS (on your PC)
+──────────────────────────────────────────────────────────────────
+GENERATE_SECRETS.bat   make TV_WEBHOOK_SECRET / EXECUTE_KEY / DATA_KEY
+NEW_KEY.bat            issue a subscriber key (prompts tier/days/note)
+REVOKE_KEY.bat         revoke a key + show the list
+RUN_TESTS.bat          pre-deploy test suite (expect "17 passed")
+TEST_DISCORD_WEBHOOK.bat  prove a webhook works before using it
+DEPLOY_TO_VPS.bat      safe upload + rebuild (edit your IP inside once;
+                       never touches the server's .env/keys/data)
+
+──────────────────────────────────────────────────────────────────
+ §16  PER-USER ORDER CAPS (product change — know this)
+──────────────────────────────────────────────────────────────────
+The per-order cap now belongs to each USER, not to you: everyone with
+operator+ sets "Your max per order" in the ⚡ Execute panel, and it
+applies to ALL orders from their key — manual, bots, protective exits.
+EXEC_MAX_USD in .env is now only an optional SERVER-WIDE ceiling
+(abuse guard) that clamps everyone; set it to 0 for no ceiling, or a
+high number (e.g. 50000) as a sanity bound. Users who never touch the
+setting inherit the ceiling as their default.

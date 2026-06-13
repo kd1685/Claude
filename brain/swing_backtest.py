@@ -1,154 +1,124 @@
-#!/usr/bin/env python3
 """
-Ascent Terminal — Quick Swing Backtest (Sharpe screener)
-=========================================================
-Runs a fast single-pass backtest on MEXC OHLCV data and
-prints a Sharpe / PnL summary.  No walk-forward, no sweep —
-just a quick sanity-check before committing to a full edge-lab run.
+swing_backtest.py — test a daily TREND-FOLLOWING strategy vs buy-and-hold.
 
-Usage:
-  python swing_backtest.py                        # BTC/USDT 1d
-  python swing_backtest.py --symbol ETH/USDT --timeframe 4h
-  python swing_backtest.py --bars 500
+Signal: time-series momentum — be LONG while price is above its EMA (uptrend),
+flat (or short) while below. Holds for days/weeks. At daily horizons fees are
+trivial. The real test isn't out-returning a bull market — it's whether trend-
+following gives a BETTER RISK-ADJUSTED result (much lower drawdown for similar
+return) and survives bear periods.
 
-Requires: ccxt, numpy, python-dotenv
+  pip install requests
+  python swing_backtest.py --interval Day1 --candles 1000 --ema 20
+  python swing_backtest.py --ema 30 --short          # also short downtrends
+  python swing_backtest.py --ema 20 --leverage 2
+
+Needs engine.py alongside (uses its fetch is not imported — self-contained fetch).
 """
 
 import argparse
-import os
-import math
-import logging
-from typing import List
+import time
+import requests
 
-import ccxt
-import numpy as np
-from dotenv import load_dotenv
-from pathlib import Path
-
-load_dotenv(Path(__file__).parent.parent / ".env")
-
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s %(levelname)s %(message)s")
-log = logging.getLogger("swing_bt")
-
-# ── CLI ───────────────────────────────────────────────────────────────────────
-parser = argparse.ArgumentParser(description="Quick swing backtest")
-parser.add_argument("--symbol",    default="BTC/USDT")
-parser.add_argument("--timeframe", default="1d")
-parser.add_argument("--bars",      type=int, default=365)
-parser.add_argument("--ema-fast",  type=int, default=9)
-parser.add_argument("--ema-slow",  type=int, default=21)
-parser.add_argument("--rsi",       type=int, default=14)
-parser.add_argument("--atr",       type=int, default=14)
-parser.add_argument("--atr-mult",  type=float, default=2.0)
-parser.add_argument("--risk",      type=float, default=0.01)
-args = parser.parse_args()
+MEXC = "https://contract.mexc.com"
+FEE = 0.0010   # 0.10% round trip, charged on each position change
 
 
-# ── Indicators ────────────────────────────────────────────────────────────────
-def ema(arr, n):
-    k = 2.0 / (n + 1)
-    out = np.empty_like(arr, dtype=float)
-    out[0] = arr[0]
-    for i in range(1, len(arr)):
-        out[i] = arr[i] * k + out[i-1] * (1 - k)
+def fetch(symbol, interval, want):
+    out = {}
+    sec = {"Day1": 86400, "Hour4": 14400}.get(interval, 86400)
+    end = int(time.time()); span = sec * 1000; s = end - want*sec - span
+    while s < end and len(out) < want + 50:
+        e = min(s + span, end)
+        try:
+            d = requests.get(f"{MEXC}/api/v1/contract/kline/{symbol}",
+                             params={"interval": interval, "start": s, "end": e},
+                             timeout=15).json().get("data", {})
+        except Exception:
+            d = {}
+        t = d.get("time", [])
+        for i in range(len(t)):
+            try:
+                out[float(t[i])] = float(d["close"][i])
+            except Exception:
+                pass
+        s = e; time.sleep(0.1)
+    return [out[k] for k in sorted(out)]
+
+
+def ema_aligned(closes, period):
+    k = 2/(period+1); out = [None]*len(closes)
+    if len(closes) < period:
+        return out
+    sma = sum(closes[:period])/period; out[period-1] = sma; prev = sma
+    for i in range(period, len(closes)):
+        prev = closes[i]*k + prev*(1-k); out[i] = prev
     return out
 
 
-def rsi(closes, n):
-    d = np.diff(closes.astype(float))
-    g = np.where(d > 0, d, 0.); l = np.where(d < 0, -d, 0.)
-    ag = np.full(len(closes), np.nan); al = np.full(len(closes), np.nan)
-    ag[n] = g[:n].mean(); al[n] = l[:n].mean()
-    for i in range(n+1, len(closes)):
-        ag[i] = (ag[i-1]*(n-1) + g[i-1]) / n
-        al[i] = (al[i-1]*(n-1) + l[i-1]) / n
-    rs = np.where(al == 0, 100., ag / al)
-    return np.where(np.isnan(ag), np.nan, 100. - 100. / (1 + rs))
+def maxdd(curve):
+    peak = curve[0]; dd = 0.0
+    for v in curve:
+        peak = max(peak, v); dd = max(dd, (peak-v)/peak)
+    return dd*100
 
 
-def atr(highs, lows, closes, n):
-    h,l,c = highs.astype(float), lows.astype(float), closes.astype(float)
-    tr = np.maximum(h[1:]-l[1:],
-         np.maximum(np.abs(h[1:]-c[:-1]), np.abs(l[1:]-c[:-1])))
-    out = np.full(len(c), np.nan)
-    out[n] = tr[:n].mean()
-    for i in range(n+1, len(c)):
-        out[i] = (out[i-1]*(n-1) + tr[i-1]) / n
-    return out
+def run(closes, ema_p, allow_short, lev):
+    ema = ema_aligned(closes, ema_p)
+    eq = 1.0; pos = 0; trades = 0; in_days = 0
+    curve = [1.0]
+    bh = [1.0]
+    for i in range(ema_p, len(closes)):
+        ret = (closes[i]-closes[i-1])/closes[i-1]
+        eq *= (1 + pos * lev * ret)            # yesterday's position earns today's return
+        desired = 1 if closes[i] > ema[i] else (-1 if allow_short else 0)
+        if desired != pos:
+            eq *= (1 - FEE * lev); trades += 1
+            pos = desired
+        if pos != 0:
+            in_days += 1
+        curve.append(eq)
+        bh.append(closes[i]/closes[ema_p])
+    return {"ret": (eq-1)*100, "dd": maxdd(curve), "trades": trades,
+            "exposure": in_days/(len(closes)-ema_p)*100 if len(closes) > ema_p else 0,
+            "bh_ret": (bh[-1]-1)*100, "bh_dd": maxdd(bh)}
 
 
-# ── Backtest ──────────────────────────────────────────────────────────────────
-def run_backtest(ohlcv: List) -> None:
-    arr    = np.array(ohlcv, dtype=float)
-    highs  = arr[:, 2]; lows = arr[:, 3]; closes = arr[:, 4]
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--interval", default="Day1")
+    ap.add_argument("--candles", type=int, default=1000)
+    ap.add_argument("--symbols", default="BTC_USDT,ETH_USDT,SOL_USDT,BNB_USDT,XRP_USDT")
+    ap.add_argument("--ema", type=int, default=20)
+    ap.add_argument("--short", action="store_true")
+    ap.add_argument("--leverage", type=float, default=1.0)
+    a = ap.parse_args()
 
-    fast_v = ema(closes, args.ema_fast)
-    slow_v = ema(closes, args.ema_slow)
-    rsi_v  = rsi(closes, args.rsi)
-    atr_v  = atr(highs, lows, closes, args.atr)
-
-    equity   = 10_000.0
-    pos      = None
-    trade_pnls: List[float] = []
-
-    for i in range(1, len(closes)):
-        if any(np.isnan(x) for x in [fast_v[i], slow_v[i], rsi_v[i], atr_v[i]]):
-            continue
-        p         = closes[i]
-        crossup   = fast_v[i-1] <= slow_v[i-1] and fast_v[i] > slow_v[i]
-        crossdown = fast_v[i-1] >= slow_v[i-1] and fast_v[i] < slow_v[i]
-
-        if pos:
-            hit  = (pos["s"]=="long" and p<=pos["stop"]) or \
-                   (pos["s"]=="short" and p>=pos["stop"])
-            xsig = (pos["s"]=="long" and crossdown) or \
-                   (pos["s"]=="short" and crossup)
-            if hit or xsig:
-                pnl = (p - pos["e"]) * pos["q"] if pos["s"]=="long" \
-                      else (pos["e"] - p) * pos["q"]
-                pnl -= (pos["e"] + p) * pos["q"] * 0.001
-                equity += pnl; trade_pnls.append(pnl); pos = None
-
-        if not pos:
-            sd  = atr_v[i] * args.atr_mult
-            qty = (equity * args.risk) / sd if sd > 0 else 0
-            if qty > 0:
-                if crossup and rsi_v[i] < 70:
-                    pos = {"s":"long",  "e":p, "q":qty, "stop":p-sd}
-                elif crossdown and rsi_v[i] > 30:
-                    pos = {"s":"short", "e":p, "q":qty, "stop":p+sd}
-
-    if not trade_pnls:
-        print("No trades executed.")
-        return
-
-    arr2    = np.array(trade_pnls)
-    sharpe  = (arr2.mean() / arr2.std() * math.sqrt(252)) if arr2.std() > 0 else 0
-    cum     = np.cumsum(arr2)
-    peak    = np.maximum.accumulate(cum)
-    dd      = ((peak - cum) / (np.abs(peak) + 1e-9)).max()
-
-    print(f"\n{'='*50}")
-    print(f"  Symbol    : {args.symbol}  {args.timeframe}")
-    print(f"  Bars      : {len(ohlcv)}")
-    print(f"  Trades    : {len(trade_pnls)}")
-    print(f"  Total PnL : {arr2.sum():+.2f} USDT")
-    print(f"  Sharpe    : {sharpe:.3f}")
-    print(f"  Max DD    : {dd:.1%}")
-    print(f"  Win rate  : {(arr2>0).mean():.1%}")
-    print(f"{'='*50}\n")
+    print(f"\nTrend filter: price vs EMA{a.ema} on {a.interval} | "
+          f"short={a.short} | leverage={a.leverage}x\n")
+    print(f"{'symbol':<10} {'STRAT ret%':>10} {'STRAT maxDD':>12} {'exp%':>6} {'trades':>7} "
+          f"| {'BUY&HOLD ret%':>13} {'B&H maxDD':>10}")
+    print("-"*84)
+    agg = []
+    for s in [x.strip() for x in a.symbols.split(",") if x.strip()]:
+        c = fetch(s, a.interval, a.candles)
+        if len(c) < a.ema + 30:
+            print(f"{s:<10} only {len(c)} candles — skipped"); continue
+        r = run(c, a.ema, a.short, a.leverage)
+        agg.append(r)
+        print(f"{s:<10} {r['ret']:>+10.1f} {r['dd']:>11.1f}% {r['exposure']:>5.0f}% "
+              f"{r['trades']:>7} | {r['bh_ret']:>+13.1f} {r['bh_dd']:>9.1f}%")
+    if agg:
+        sret = sum(r['ret'] for r in agg)/len(agg)
+        sdd = sum(r['dd'] for r in agg)/len(agg)
+        bret = sum(r['bh_ret'] for r in agg)/len(agg)
+        bdd = sum(r['bh_dd'] for r in agg)/len(agg)
+        print("-"*84)
+        print(f"{'AVERAGE':<10} {sret:>+10.1f} {sdd:>11.1f}% {'':>6} {'':>7} "
+              f"| {bret:>+13.1f} {bdd:>9.1f}%")
+        print(f"\nWhat matters: similar/better return at MUCH lower drawdown = real edge")
+        print(f"(trend-following earns its keep by sidestepping crashes). If it just")
+        print(f"matches buy-&-hold with similar drawdown, it's only beta, not an edge.")
 
 
-# ── Fetch + run ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    exchange = ccxt.mexc({
-        "apiKey": os.getenv("MEXC_API_KEY", ""),
-        "secret": os.getenv("MEXC_SECRET_KEY", ""),
-        "enableRateLimit": True,
-    })
-    exchange.load_markets()
-    log.info("fetching", symbol=args.symbol, bars=args.bars)
-    ohlcv = exchange.fetch_ohlcv(args.symbol, args.timeframe, limit=args.bars)
-    log.info("fetched", n=len(ohlcv))
-    run_backtest(ohlcv)
+    main()
