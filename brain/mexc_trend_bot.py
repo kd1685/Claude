@@ -1,437 +1,450 @@
 #!/usr/bin/env python3
 """
-MEXC Futures Daily Trend Bot
-Strategy: EMA30 on Day1 candles — long above EMA, short below EMA.
-Designed to run on the owner's Windows machine (PyQt5 GUI).
-NOT deployed to the VPS.
+Ascent Terminal — MEXC Trend / Swing Bot
+=========================================
+Strategy  : EMA cross + RSI filter + ADX regime gate
+Sizing     : Kelly Criterion (half-Kelly by default)
+Risk mgmt :
+  • Per-trade stop = ATR × multiplier
+  • Drawdown circuit-breaker (halts new entries if DD > threshold)
+  • Position reconciliation on startup (reads live open orders)
+Exchange  : MEXC via ccxt
+Monitoring: Redis heartbeat + Prometheus metrics
 
-Requires: pip install PyQt5 pyqtgraph pandas numpy requests
+Required env vars:
+  MEXC_API_KEY, MEXC_SECRET_KEY
+  REDIS_URL            (default: redis://localhost:6379/0)
+
+Optional env vars (all have defaults):
+  TREND_SYMBOL          BTC/USDT
+  TREND_TIMEFRAME       4h
+  TREND_EMA_FAST        9
+  TREND_EMA_SLOW        21
+  TREND_RSI_PERIOD      14
+  TREND_ATR_PERIOD      14
+  TREND_ADX_PERIOD      14
+  TREND_ADX_MIN         20        (ADX threshold for regime filter)
+  TREND_ATR_MULT        2.0       (stop distance in ATR units)
+  TREND_KELLY_FRAC      0.5       (half-Kelly by default)
+  TREND_MAX_KELLY       0.20      (cap Kelly at 20 % of equity)
+  TREND_DD_HALT         0.10      (halt if drawdown > 10 %)
+  TREND_TAKER_FEE       0.001
+  METRICS_PORT          8002
 """
 
-import sys, os, json, time, hmac, hashlib, threading, logging
-from datetime import datetime, timezone, timedelta
-from collections import deque
+import os
+import sys
+import time
+import math
+import signal
+import logging
+import threading
+from typing import Optional, Dict, List
 
-import requests
-import pandas as pd
+import ccxt
 import numpy as np
+import redis
+from dotenv import load_dotenv
+from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
-# ── Logging ──────────────────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)-8s %(message)s',
-    datefmt='%H:%M:%S',
-)
-log = logging.getLogger('trend_bot')
-
-# ── MEXC REST ────────────────────────────────────────────────────────────────
-BASE = 'https://contract.mexc.com'
-
-class MexcClient:
-    def __init__(self, key: str, secret: str):
-        self.key    = key
-        self.secret = secret
-        self.s      = requests.Session()
-        self.s.headers.update({'Content-Type': 'application/json'})
-
-    # ── auth ────────────────────────────────────────────────────────────────
-    def _sign(self, params: dict) -> dict:
-        params = dict(params)
-        params['timestamp'] = str(int(time.time() * 1000))
-        params['api_key']   = self.key
-        q = '&'.join(f'{k}={v}' for k, v in sorted(params.items()))
-        params['sign'] = hmac.new(self.secret.encode(), q.encode(),
-                                   hashlib.sha256).hexdigest()
-        return params
-
-    # ── market data ─────────────────────────────────────────────────────────
-    def klines(self, symbol: str, interval: str = 'Day1',
-               limit: int = 100) -> pd.DataFrame:
-        end   = int(time.time())
-        start = end - limit * 86400
-        r = self.s.get(
-            f'{BASE}/api/v1/contract/kline',
-            params={'symbol': symbol, 'interval': interval,
-                    'start': start, 'end': end},
-            timeout=15,
-        )
-        r.raise_for_status()
-        raw = r.json().get('data', {})
-        df = pd.DataFrame({
-            'ts':    raw['time'],
-            'open':  raw['realOpen'],
-            'high':  raw['high'],
-            'low':   raw['low'],
-            'close': raw['realClose'],
-            'vol':   raw['vol'],
-        }).astype({'ts': int, 'open': float, 'high': float,
-                   'low': float, 'close': float, 'vol': float})
-        df['dt'] = pd.to_datetime(df['ts'], unit='s', utc=True)
-        return df.sort_values('ts').reset_index(drop=True)
-
-    def ticker(self, symbol: str) -> float:
-        r = self.s.get(f'{BASE}/api/v1/contract/ticker',
-                       params={'symbol': symbol}, timeout=10)
-        r.raise_for_status()
-        return float(r.json()['data']['lastPrice'])
-
-    # ── account ──────────────────────────────────────────────────────────────
-    def account(self) -> dict:
-        r = self.s.get(f'{BASE}/api/v1/private/account/assets',
-                       params=self._sign({}), timeout=10)
-        r.raise_for_status()
-        return r.json().get('data', {})
-
-    def open_positions(self, symbol: str) -> list:
-        r = self.s.get(f'{BASE}/api/v1/private/position/open_positions',
-                       params=self._sign({'symbol': symbol}), timeout=10)
-        r.raise_for_status()
-        return r.json().get('data', [])
-
-    # ── trading ──────────────────────────────────────────────────────────────
-    def set_leverage(self, symbol: str, lev: int):
-        data = self._sign({'symbol': symbol, 'leverage': lev,
-                           'openType': 1, 'positionType': 3})
-        self.s.post(f'{BASE}/api/v1/private/position/change_leverage',
-                    json=data, timeout=10)
-
-    def market_order(self, symbol: str, side: int, vol: float):
-        """
-        side: 1=open_long 2=close_short 3=open_short 4=close_long
-        vol:  number of contracts
-        """
-        data = self._sign({'symbol': symbol, 'side': side, 'openType': 1,
-                           'type': 5, 'vol': vol, 'leverage': 3})
-        r = self.s.post(f'{BASE}/api/v1/private/order/submit',
-                        json=data, timeout=10)
-        r.raise_for_status()
-        return r.json()
-
-    def close_all(self, symbol: str):
-        for pos in self.open_positions(symbol):
-            side = 4 if pos['positionType'] == 1 else 2
-            self.market_order(symbol, side, pos['holdVol'])
-
-
-# ── Strategy ─────────────────────────────────────────────────────────────────
-
-class TrendStrategy:
-    EMA_PERIOD  = 30
-    LEVERAGE    = 3
-    MAX_USDT    = float(os.getenv('MAX_POSITION_USDT', 200))
-
-    def __init__(self, client: MexcClient, symbol: str):
-        self.client = client
-        self.symbol = symbol
-        self.last_signal: str | None = None  # 'long' | 'short' | None
-
-    def ema(self, series: pd.Series) -> pd.Series:
-        return series.ewm(span=self.EMA_PERIOD, adjust=False).mean()
-
-    def evaluate(self) -> str | None:
-        """Returns 'long', 'short', or None (no change)."""
-        df  = self.client.klines(self.symbol, 'Day1', self.EMA_PERIOD + 10)
-        e   = self.ema(df['close'])
-        last_close = df['close'].iloc[-2]   # confirmed closed candle
-        last_ema   = e.iloc[-2]
-
-        new_signal = 'long' if last_close > last_ema else 'short'
-        if new_signal != self.last_signal:
-            return new_signal
-        return None
-
-    def execute(self, signal: str):
-        price = self.client.ticker(self.symbol)
-        vol   = max(1, int(self.MAX_USDT / price))
-        self.client.set_leverage(self.symbol, self.LEVERAGE)
-        self.client.close_all(self.symbol)
-        if signal == 'long':
-            self.client.market_order(self.symbol, 1, vol)   # open long
-        else:
-            self.client.market_order(self.symbol, 3, vol)   # open short
-        self.last_signal = signal
-        log.info('Signal → %s | price=%.4f | vol=%d', signal.upper(), price, vol)
-
-    # ── CSV export ───────────────────────────────────────────────────────────
-    def export_signals_csv(self, path: str = 'brain/daily_signals.csv'):
-        df   = self.client.klines(self.symbol, 'Day1', 100)
-        df['ema'] = self.ema(df['close'])
-        df['signal'] = np.where(df['close'] > df['ema'], 'long', 'short')
-        df[['dt', 'close', 'ema', 'signal']].to_csv(path, index=False)
-        log.info('Signals exported → %s', path)
-        return path
-
-
-# ── Scheduler ────────────────────────────────────────────────────────────────
-
-def _scheduler_thread(strategy: TrendStrategy,
-                      log_cb, status_cb,
-                      interval_hours: float = 24.0):
-    """Runs evaluate → execute every interval_hours."""
-    log_cb('Scheduler started')
-    while True:
-        try:
-            sig = strategy.evaluate()
-            if sig:
-                status_cb(f'Signal: {sig.upper()}')
-                log_cb(f'New signal: {sig.upper()} — executing')
-                strategy.execute(sig)
-                log_cb('Order sent')
-            else:
-                log_cb('No signal change')
-                status_cb(f'Holding {strategy.last_signal or "flat"}')
-        except Exception as e:
-            log_cb(f'ERROR: {e}')
-            log.exception('Scheduler error')
-        time.sleep(interval_hours * 3600)
-
-
-# ── GUI ───────────────────────────────────────────────────────────────────────
-
-def run_gui(client: MexcClient):
-    from PyQt5.QtWidgets import (
-        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-        QLabel, QPushButton, QLineEdit, QTextEdit, QGroupBox, QComboBox,
-        QSplitter, QFileDialog,
+try:
+    import structlog
+    structlog.configure(
+        processors=[
+            structlog.stdlib.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.JSONRenderer(),
+        ],
+        wrapper_class=structlog.BoundLogger,
+        context_class=dict,
+        logger_factory=structlog.PrintLoggerFactory(),
     )
-    from PyQt5.QtCore import Qt, pyqtSignal, QObject
-    from PyQt5.QtGui import QFont, QColor, QPalette
-    import pyqtgraph as pg
+    log = structlog.get_logger()
+except ImportError:
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s %(levelname)s %(message)s")
+    log = logging.getLogger("trend_bot")
 
-    pg.setConfigOptions(antialias=True)
+load_dotenv()
 
-    class Signals(QObject):
-        log_msg    = pyqtSignal(str)
-        status_msg = pyqtSignal(str)
-        chart_data = pyqtSignal(object, object, object)   # times, closes, emas
+# ── Config ────────────────────────────────────────────────────────────────────
+SYMBOL      = os.getenv("TREND_SYMBOL",     "BTC/USDT")
+TIMEFRAME   = os.getenv("TREND_TIMEFRAME",  "4h")
+EMA_FAST    = int(os.getenv("TREND_EMA_FAST",    "9"))
+EMA_SLOW    = int(os.getenv("TREND_EMA_SLOW",    "21"))
+RSI_PERIOD  = int(os.getenv("TREND_RSI_PERIOD",  "14"))
+ATR_PERIOD  = int(os.getenv("TREND_ATR_PERIOD",  "14"))
+ADX_PERIOD  = int(os.getenv("TREND_ADX_PERIOD",  "14"))
+ADX_MIN     = float(os.getenv("TREND_ADX_MIN",   "20.0"))
+ATR_MULT    = float(os.getenv("TREND_ATR_MULT",  "2.0"))
+KELLY_FRAC  = float(os.getenv("TREND_KELLY_FRAC","0.5"))
+MAX_KELLY   = float(os.getenv("TREND_MAX_KELLY", "0.20"))
+DD_HALT     = float(os.getenv("TREND_DD_HALT",   "0.10"))
+TAKER_FEE   = float(os.getenv("TREND_TAKER_FEE", "0.001"))
+METRICS_PORT= int(os.getenv("METRICS_PORT",       "8002"))
+REDIS_URL   = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-    sigs = Signals()
+HEARTBEAT_KEY = "ascent:trend:heartbeat"
+HEARTBEAT_TTL = 300
+MIN_CANDLES   = max(EMA_SLOW, RSI_PERIOD, ATR_PERIOD, ADX_PERIOD * 2) + 10
 
-    # ── fetch symbol list ────────────────────────────────────────────────────
-    DEFAULT_SYM = 'BTC_USDT'
-    try:
-        r   = requests.get(f'{BASE}/api/v1/contract/detail', timeout=10)
-        all_syms = [d['symbol'] for d in r.json().get('data', [])
-                    if d.get('quoteCoin') == 'USDT' and d.get('state') == 0]
-    except Exception:
-        all_syms = [DEFAULT_SYM]
+# ── Prometheus ────────────────────────────────────────────────────────────────
+trades_ctr  = Counter(  "trend_trades_total",  "Total trend-bot trades", ["side"])
+pnl_gauge   = Gauge(    "trend_pnl_usdt",      "Cumulative PnL")
+equity_g    = Gauge(    "trend_equity_usdt",   "Current equity")
+dd_gauge    = Gauge(    "trend_drawdown",      "Current drawdown fraction")
+latency_h   = Histogram("trend_loop_seconds",  "Loop latency")
+errors_ctr  = Counter(  "trend_errors_total",  "Errors")
 
-    strategy_ref: list[TrendStrategy | None] = [None]
 
-    # ── app / palette ────────────────────────────────────────────────────────
-    app = QApplication(sys.argv)
-    app.setStyle('Fusion')
-    pal = QPalette()
-    pal.setColor(QPalette.Window,        QColor(28, 28, 28))
-    pal.setColor(QPalette.WindowText,    QColor(220, 220, 220))
-    pal.setColor(QPalette.Base,          QColor(18, 18, 18))
-    pal.setColor(QPalette.Text,          QColor(220, 220, 220))
-    pal.setColor(QPalette.Button,        QColor(50, 50, 50))
-    pal.setColor(QPalette.ButtonText,    QColor(220, 220, 220))
-    pal.setColor(QPalette.Highlight,     QColor(0, 120, 215))
-    pal.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
-    app.setPalette(pal)
+# ── Indicators ────────────────────────────────────────────────────────────────
+def _ema(arr: np.ndarray, n: int) -> np.ndarray:
+    k = 2.0 / (n + 1)
+    out = np.empty_like(arr, dtype=float)
+    out[0] = arr[0]
+    for i in range(1, len(arr)):
+        out[i] = arr[i] * k + out[i-1] * (1 - k)
+    return out
 
-    win = QMainWindow()
-    win.setWindowTitle('Ascent Trend Bot')
-    win.resize(1200, 750)
-    central = QWidget()
-    win.setCentralWidget(central)
-    root = QVBoxLayout(central)
 
-    # ── toolbar ──────────────────────────────────────────────────────────────
-    tb = QHBoxLayout()
-    sym_combo = QComboBox()
-    sym_combo.addItems(sorted(all_syms))
-    sym_combo.setCurrentText(DEFAULT_SYM)
-    sym_combo.setFixedWidth(160)
-    sym_combo.setStyleSheet('background:#2a2a2a; color:#eee;')
+def _rsi(closes: np.ndarray, n: int) -> np.ndarray:
+    delta = np.diff(closes.astype(float))
+    gain  = np.where(delta > 0, delta, 0.0)
+    loss  = np.where(delta < 0, -delta, 0.0)
+    avg_g = np.full(len(closes), np.nan)
+    avg_l = np.full(len(closes), np.nan)
+    if n < len(gain):
+        avg_g[n] = gain[:n].mean()
+        avg_l[n] = loss[:n].mean()
+        for i in range(n + 1, len(closes)):
+            avg_g[i] = (avg_g[i-1] * (n-1) + gain[i-1]) / n
+            avg_l[i] = (avg_l[i-1] * (n-1) + loss[i-1]) / n
+    rs = np.where(avg_l == 0, 100.0, avg_g / avg_l)
+    return np.where(np.isnan(avg_g), np.nan, 100.0 - 100.0 / (1 + rs))
 
-    status_lbl = QLabel('Idle')
-    status_lbl.setFont(QFont('Consolas', 13, QFont.Bold))
-    status_lbl.setStyleSheet('color: #aaa;')
 
-    btn_run    = QPushButton('▶  Run')
-    btn_stop   = QPushButton('■  Stop')
-    btn_export = QPushButton('📥  Export CSV')
-    btn_stop.setEnabled(False)
-    for btn in (btn_run, btn_stop, btn_export):
-        btn.setFixedHeight(32)
-        btn.setFont(QFont('Consolas', 10))
+def _atr(highs: np.ndarray, lows: np.ndarray,
+         closes: np.ndarray, n: int) -> np.ndarray:
+    h, l, c = highs.astype(float), lows.astype(float), closes.astype(float)
+    tr = np.maximum(
+        h[1:] - l[1:],
+        np.maximum(np.abs(h[1:] - c[:-1]), np.abs(l[1:] - c[:-1])),
+    )
+    out = np.full(len(c), np.nan)
+    if n <= len(tr):
+        out[n] = tr[:n].mean()
+        for i in range(n + 1, len(c)):
+            out[i] = (out[i-1] * (n-1) + tr[i-1]) / n
+    return out
 
-    tb.addWidget(QLabel('Symbol:'))
-    tb.addWidget(sym_combo)
-    tb.addStretch()
-    tb.addWidget(status_lbl)
-    tb.addSpacing(20)
-    tb.addWidget(btn_run)
-    tb.addWidget(btn_stop)
-    tb.addWidget(btn_export)
-    root.addLayout(tb)
 
-    # ── splitter: chart | log ────────────────────────────────────────────────
-    splitter = QSplitter(Qt.Horizontal)
+def _adx(highs: np.ndarray, lows: np.ndarray,
+         closes: np.ndarray, n: int) -> np.ndarray:
+    h, l, c = highs.astype(float), lows.astype(float), closes.astype(float)
+    up   = np.diff(h);  down = -np.diff(l)
+    dm_p = np.where((up > down) & (up > 0), up,   0.0)
+    dm_n = np.where((down > up) & (down > 0), down, 0.0)
+    tr   = np.maximum(
+        h[1:] - l[1:],
+        np.maximum(np.abs(h[1:] - c[:-1]), np.abs(l[1:] - c[:-1])),
+    )
+    length = len(h)
+    atr_s  = np.full(length, np.nan)
+    dmp_s  = np.full(length, np.nan)
+    dmn_s  = np.full(length, np.nan)
+    adx_v  = np.full(length, np.nan)
 
-    pw = pg.PlotWidget(title='Daily Close + EMA30')
-    pw.setBackground('#1a1a1a')
-    pw.showGrid(x=True, y=True, alpha=0.2)
-    close_curve = pw.plot(pen=pg.mkPen('#00e5ff', width=1.5), name='Close')
-    ema_curve   = pw.plot(pen=pg.mkPen('#ff9800', width=1.5), name='EMA30')
-    splitter.addWidget(pw)
+    if n < len(tr):
+        atr_s[n] = tr[:n].mean()
+        dmp_s[n] = dm_p[:n].mean()
+        dmn_s[n] = dm_n[:n].mean()
+        for i in range(n + 1, length):
+            atr_s[i] = (atr_s[i-1]*(n-1) + tr[i-1])    / n
+            dmp_s[i] = (dmp_s[i-1]*(n-1) + dm_p[i-1])  / n
+            dmn_s[i] = (dmn_s[i-1]*(n-1) + dm_n[i-1])  / n
 
-    log_box = QTextEdit()
-    log_box.setReadOnly(True)
-    log_box.setFont(QFont('Consolas', 9))
-    log_box.setStyleSheet('background:#111; color:#ccc;')
-    splitter.addWidget(log_box)
-    splitter.setSizes([800, 400])
-    root.addWidget(splitter, stretch=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        di_p = 100 * dmp_s / atr_s
+        di_n = 100 * dmn_s / atr_s
+        dx   = 100 * np.abs(di_p - di_n) / (di_p + di_n)
 
-    # ── params ───────────────────────────────────────────────────────────────
-    p_box    = QGroupBox('Strategy Parameters')
-    p_layout = QHBoxLayout(p_box)
+    start2 = 2 * n
+    if start2 < length:
+        adx_v[start2] = np.nanmean(dx[n:start2])
+        for i in range(start2 + 1, length):
+            adx_v[i] = (adx_v[i-1] * (n-1) + dx[i]) / n
+    return adx_v
 
-    def _p(label, val):
-        l = QLabel(label); l.setStyleSheet('color:#aaa;')
-        e = QLineEdit(str(val))
-        e.setFixedWidth(70)
-        e.setStyleSheet('background:#2a2a2a; color:#eee; border:1px solid #444;')
-        p_layout.addWidget(l); p_layout.addWidget(e)
-        return e
 
-    e_ema     = _p('EMA period', TrendStrategy.EMA_PERIOD)
-    e_lev     = _p('Leverage',   TrendStrategy.LEVERAGE)
-    e_maxusdt = _p('Max USDT',   int(TrendStrategy.MAX_USDT))
-    e_interval= _p('Interval h', 24)
-    p_layout.addStretch()
+# ── Kelly sizing ──────────────────────────────────────────────────────────────
+def kelly_size(equity: float, win_rate: float, avg_win: float,
+               avg_loss: float, frac: float, cap: float) -> float:
+    """
+    Half-Kelly position size as fraction of equity.
+    Returns USDT amount to risk.
+    """
+    if avg_loss <= 0 or win_rate <= 0 or win_rate >= 1:
+        return equity * 0.01  # fallback: 1 %
+    b    = avg_win / avg_loss
+    q    = 1 - win_rate
+    k    = (b * win_rate - q) / b          # full Kelly fraction
+    k    = max(0.0, k * frac)             # half-Kelly, floor at 0
+    k    = min(k, cap)                    # cap
+    return equity * k
 
-    def apply_params():
+
+# ── Heartbeat ─────────────────────────────────────────────────────────────────
+class Heartbeat:
+    def __init__(self, url: str, key: str, ttl: int):
         try:
-            TrendStrategy.EMA_PERIOD = int(e_ema.text())
-            TrendStrategy.LEVERAGE   = int(e_lev.text())
-            TrendStrategy.MAX_USDT   = float(e_maxusdt.text())
-            log_box.append('↺ Parameters updated')
-        except ValueError as ex:
-            log_box.append(f'⚠ Bad param: {ex}')
+            self._r  = redis.from_url(url, socket_connect_timeout=3)
+            self._k  = key
+            self._t  = ttl
+            self._ok = True
+        except Exception as exc:
+            log.warning("redis_unavailable", error=str(exc))
+            self._ok = False
 
-    btn_ap = QPushButton('Apply')
-    btn_ap.clicked.connect(apply_params)
-    p_layout.addWidget(btn_ap)
-    root.addWidget(p_box)
+    def ping(self):
+        if self._ok:
+            try: self._r.setex(self._k, self._t, "ok")
+            except Exception: pass
 
-    # ── chart refresh ─────────────────────────────────────────────────────────
-    def refresh_chart(sym: str):
+
+# ── Bot ───────────────────────────────────────────────────────────────────────
+class TrendBot:
+    def __init__(self):
+        self.exchange = ccxt.mexc({
+            "apiKey": os.environ["MEXC_API_KEY"],
+            "secret": os.environ["MEXC_SECRET_KEY"],
+            "enableRateLimit": True,
+        })
+        self.exchange.load_markets()
+
+        self.hb            = Heartbeat(REDIS_URL, HEARTBEAT_KEY, HEARTBEAT_TTL)
+        self.position: Optional[Dict] = None
+        self.cum_pnl       = 0.0
+        self.peak_equity   = None
+        self.trade_history: List[float] = []   # list of trade PnLs for Kelly
+        self._stop         = threading.Event()
+
+        signal.signal(signal.SIGINT,  self._shutdown)
+        signal.signal(signal.SIGTERM, self._shutdown)
+
+        self._reconcile_position()
+        log.info("trend_bot_init", symbol=SYMBOL, timeframe=TIMEFRAME)
+
+    # ── Shutdown ───────────────────────────────────────────────────────────
+    def _shutdown(self, signum, frame):
+        log.info("shutdown", signum=signum)
+        self._stop.set()
+
+    # ── Position reconciliation ────────────────────────────────────────────
+    def _reconcile_position(self):
+        """
+        On startup, check the exchange for any open position/orders
+        for SYMBOL and set self.position accordingly so we don't
+        double-up or ignore an existing trade.
+        """
         try:
-            df = client.klines(sym, 'Day1', 100)
-            df['ema'] = df['close'].ewm(span=TrendStrategy.EMA_PERIOD,
-                                        adjust=False).mean()
-            ts = df['ts'].values.astype(float)
-            sigs.chart_data.emit(ts, df['close'].values, df['ema'].values)
-        except Exception as e:
-            sigs.log_msg.emit(f'Chart error: {e}')
+            balance = self.exchange.fetch_balance()
+            base    = SYMBOL.split("/")[0]   # e.g. "BTC"
+            held    = float(balance.get(base, {}).get("total", 0.0))
+            if held > 0:
+                # We have a long position; estimate entry from open orders
+                # or use last ticker as a proxy.
+                ticker = self.exchange.fetch_ticker(SYMBOL)
+                price  = ticker["last"]
+                atr_proxy = price * 0.015   # ~1.5 % proxy stop until real ATR
+                self.position = {
+                    "side":  "long",
+                    "entry": price,
+                    "qty":   held,
+                    "stop":  price - atr_proxy,
+                    "reconciled": True,
+                }
+                log.info("reconciled_long", qty=held, proxy_entry=price)
+        except Exception as exc:
+            log.warning("reconcile_failed", error=str(exc))
 
-    def on_chart_data(ts, closes, emas):
-        close_curve.setData(ts, closes)
-        ema_curve.setData(ts, emas)
+    # ── Drawdown check ─────────────────────────────────────────────────────
+    def _check_drawdown(self, equity: float) -> bool:
+        """Returns True if trading is halted due to drawdown."""
+        if self.peak_equity is None:
+            self.peak_equity = equity
+        self.peak_equity = max(self.peak_equity, equity)
+        dd = (self.peak_equity - equity) / self.peak_equity
+        dd_gauge.set(dd)
+        if dd >= DD_HALT:
+            log.warning("drawdown_halt", drawdown=round(dd, 4))
+            return True
+        return False
 
-    sigs.chart_data.connect(on_chart_data)
-    sigs.log_msg.connect(lambda m: log_box.append(
-        f'[{datetime.now():%H:%M:%S}] {m}'))
-    sigs.status_msg.connect(lambda m: (
-        status_lbl.setText(m),
-        status_lbl.setStyleSheet('color: #ffa726;' if 'long' in m.lower()
-                                 else 'color: #ef5350;' if 'short' in m.lower()
-                                 else 'color: #aaa;'),
-    ))
+    # ── Kelly helper ───────────────────────────────────────────────────────
+    def _kelly_usdt(self, equity: float) -> float:
+        if len(self.trade_history) < 10:
+            return equity * 0.01    # not enough data; use 1 %
+        arr      = np.array(self.trade_history[-50:])   # recent 50 trades
+        wins     = arr[arr > 0]
+        losses   = np.abs(arr[arr < 0])
+        win_rate = len(wins) / len(arr)
+        avg_win  = wins.mean()   if len(wins)   > 0 else 0.0
+        avg_loss = losses.mean() if len(losses) > 0 else 1.0
+        return kelly_size(equity, win_rate, avg_win, avg_loss,
+                          KELLY_FRAC, MAX_KELLY)
 
-    # ── button handlers ───────────────────────────────────────────────────────
-    _sched_stop = threading.Event()
+    # ── Main loop ──────────────────────────────────────────────────────────
+    def run(self):
+        start_http_server(METRICS_PORT)
+        log.info("metrics_server_started", port=METRICS_PORT)
 
-    def start():
-        sym = sym_combo.currentText()
-        strat = TrendStrategy(client, sym)
-        strategy_ref[0] = strat
-        _sched_stop.clear()
-
-        # Load chart immediately
-        threading.Thread(target=refresh_chart, args=(sym,), daemon=True).start()
-
-        def log_cb(m):    sigs.log_msg.emit(m)
-        def status_cb(m): sigs.status_msg.emit(m)
-
-        def _loop():
+        retry = 5
+        while not self._stop.is_set():
             try:
-                interval = float(e_interval.text())
-            except ValueError:
-                interval = 24.0
-            _scheduler_thread(strat, log_cb, status_cb, interval)
+                with latency_h.time():
+                    self._tick()
+                retry = 5
+            except ccxt.NetworkError as e:
+                errors_ctr.inc()
+                log.warning("network_error", err=str(e), retry=retry)
+                self._stop.wait(retry); retry = min(retry*2, 300)
+            except ccxt.ExchangeError as e:
+                errors_ctr.inc()
+                log.error("exchange_error", err=str(e))
+                self._stop.wait(retry); retry = min(retry*2, 300)
+            except Exception as e:
+                errors_ctr.inc()
+                log.error("unexpected", err=str(e), exc_info=True)
+                self._stop.wait(retry); retry = min(retry*2, 300)
 
-        t = threading.Thread(target=_loop, daemon=True)
-        t.start()
-        btn_run.setEnabled(False)
-        btn_stop.setEnabled(True)
-        status_lbl.setText('Running')
-        status_lbl.setStyleSheet('color: #66bb6a;')
+        self._emergency_close()
+        log.info("bot_stopped")
 
-    def stop():
-        _sched_stop.set()
-        btn_run.setEnabled(True)
-        btn_stop.setEnabled(False)
-        status_lbl.setText('Stopped')
-        status_lbl.setStyleSheet('color: #ef5350;')
-        log_box.append('■ Bot stopped (open positions NOT closed)')
+    # ── Tick ───────────────────────────────────────────────────────────────
+    def _tick(self):
+        ohlcv = self.exchange.fetch_ohlcv(SYMBOL, TIMEFRAME, limit=MIN_CANDLES + 20)
+        if len(ohlcv) < MIN_CANDLES:
+            log.info("insufficient_candles", have=len(ohlcv))
+            self._stop.wait(60)
+            return
 
-    def export_csv():
-        strat = strategy_ref[0]
-        if strat is None:
-            strat = TrendStrategy(client, sym_combo.currentText())
-        path, _ = QFileDialog.getSaveFileName(
-            win, 'Save CSV', 'daily_signals.csv', 'CSV files (*.csv)')
-        if path:
-            def _do():
-                try:
-                    out = strat.export_signals_csv(path)
-                    sigs.log_msg.emit(f'Exported → {out}')
-                except Exception as e:
-                    sigs.log_msg.emit(f'Export error: {e}')
-            threading.Thread(target=_do, daemon=True).start()
+        arr    = np.array(ohlcv, dtype=float)
+        highs  = arr[:, 2]; lows = arr[:, 3]; closes = arr[:, 4]
 
-    btn_run.clicked.connect(start)
-    btn_stop.clicked.connect(stop)
-    btn_export.clicked.connect(export_csv)
-    sym_combo.currentTextChanged.connect(
-        lambda sym: threading.Thread(target=refresh_chart,
-                                     args=(sym,), daemon=True).start())
+        fast   = _ema(closes, EMA_FAST)
+        slow   = _ema(closes, EMA_SLOW)
+        rsi_v  = _rsi(closes, RSI_PERIOD)
+        atr_v  = _atr(highs, lows, closes, ATR_PERIOD)
+        adx_v  = _adx(highs, lows, closes, ADX_PERIOD)
 
-    win.show()
-    sys.exit(app.exec_())
+        price     = closes[-1]
+        crossup   = fast[-2] <= slow[-2] and fast[-1] > slow[-1]
+        crossdown = fast[-2] >= slow[-2] and fast[-1] < slow[-1]
+        in_trend  = not np.isnan(adx_v[-1]) and adx_v[-1] >= ADX_MIN
+
+        equity = self._get_equity()
+        equity_g.set(equity)
+        self.hb.ping()
+
+        if self._check_drawdown(equity):
+            # Still manage existing position but don't open new ones
+            if self.position:
+                self._check_exit(price, crossdown, crossup)
+            self._sleep_candle()
+            return
+
+        # ── Exit ──────────────────────────────────────────────────────
+        if self.position:
+            self._check_exit(price, crossdown, crossup)
+
+        # ── Entry ─────────────────────────────────────────────────────
+        if not self.position and in_trend:
+            risk_usdt = self._kelly_usdt(equity)
+            stop_dist = float(atr_v[-1]) * ATR_MULT if not np.isnan(atr_v[-1]) else 0
+            if stop_dist <= 0:
+                self._sleep_candle(); return
+            qty = risk_usdt / stop_dist
+            if qty <= 0:
+                self._sleep_candle(); return
+
+            if crossup and not np.isnan(rsi_v[-1]) and rsi_v[-1] < 70:
+                self._open("long",  price, qty, price - stop_dist)
+            elif crossdown and not np.isnan(rsi_v[-1]) and rsi_v[-1] > 30:
+                self._open("short", price, qty, price + stop_dist)
+
+        self._sleep_candle()
+
+    def _check_exit(self, price: float, crossdown: bool, crossup: bool):
+        pos = self.position
+        hit = (
+            (pos["side"] == "long"  and price <= pos["stop"]) or
+            (pos["side"] == "short" and price >= pos["stop"])
+        )
+        sig = (
+            (pos["side"] == "long"  and crossdown) or
+            (pos["side"] == "short" and crossup)
+        )
+        if hit or sig:
+            self._close(price, "stop" if hit else "signal")
+
+    # ── Orders ────────────────────────────────────────────────────────────
+    def _open(self, side: str, price: float, qty: float, stop: float):
+        order_side = "buy" if side == "long" else "sell"
+        try:
+            order = self.exchange.create_market_order(SYMBOL, order_side, qty)
+            self.position = {
+                "side":  side,
+                "entry": float(order.get("average") or price),
+                "qty":   qty,
+                "stop":  stop,
+            }
+            trades_ctr.labels(side=side).inc()
+            log.info("opened", **self.position)
+        except Exception as exc:
+            log.error("open_failed", error=str(exc)); raise
+
+    def _close(self, price: float, reason: str):
+        pos = self.position
+        side = "sell" if pos["side"] == "long" else "buy"
+        try:
+            order      = self.exchange.create_market_order(SYMBOL, side, pos["qty"])
+            exit_price = float(order.get("average") or price)
+            gross      = (exit_price - pos["entry"]) * pos["qty"] \
+                         if pos["side"] == "long" \
+                         else (pos["entry"] - exit_price) * pos["qty"]
+            fees  = (pos["entry"] + exit_price) * pos["qty"] * TAKER_FEE
+            pnl   = gross - fees
+            self.cum_pnl += pnl
+            self.trade_history.append(pnl)
+            pnl_gauge.set(self.cum_pnl)
+            log.info("closed", reason=reason, pnl=round(pnl, 4),
+                     cum=round(self.cum_pnl, 4))
+            self.position = None
+        except Exception as exc:
+            log.error("close_failed", error=str(exc)); raise
+
+    def _emergency_close(self):
+        if self.position:
+            try:
+                t = self.exchange.fetch_ticker(SYMBOL)
+                self._close(t["last"], "shutdown")
+            except Exception as exc:
+                log.error("emergency_close_failed", error=str(exc))
+
+    def _get_equity(self) -> float:
+        b = self.exchange.fetch_balance()
+        return float(b.get("USDT", {}).get("free", 0.0))
+
+    def _sleep_candle(self):
+        tf_sec = {
+            "1m":60,"3m":180,"5m":300,"15m":900,
+            "30m":1800,"1h":3600,"4h":14400,"1d":86400,
+        }.get(TIMEFRAME, 3600)
+        now  = time.time()
+        wait = tf_sec - (now % tf_sec)
+        self._stop.wait(max(1, wait - 2))
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
-
-def main():
-    api_key    = os.getenv('MEXC_API_KEY', '')
-    api_secret = os.getenv('MEXC_API_SECRET', '')
-
-    if not api_key:
-        keys_path = os.path.join(os.path.dirname(__file__), '..', 'keys.json')
-        if os.path.exists(keys_path):
-            with open(keys_path) as f:
-                k = json.load(f)
-            api_key    = k.get('api_key', '')
-            api_secret = k.get('api_secret', '')
-
-    if not api_key:
-        from PyQt5.QtWidgets import QApplication, QInputDialog
-        _app = QApplication.instance() or QApplication(sys.argv)
-        api_key,    ok1 = QInputDialog.getText(None, 'MEXC Key',    'API Key:')
-        api_secret, ok2 = QInputDialog.getText(None, 'MEXC Secret', 'API Secret:')
-        if not (ok1 and ok2):
-            sys.exit(0)
-
-    client = MexcClient(api_key, api_secret)
-    run_gui(client)
-
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    TrendBot().run()

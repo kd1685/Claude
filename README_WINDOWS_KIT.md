@@ -3,50 +3,41 @@
 What's in this folder and how it fits together:
 
 ```
-download.html          ← the page users land on to get their Windows kit
-UPDATE.bat             ← owner's one-click deploy script (edit 3 vars at top)
-organise.bat           ← moves Downloads into dated subfolders (utility)
-brain/                 ← owner-only research tools (never deployed to VPS)
-  edge_lab.py          ← back-tests indicators across MEXC tickers
-  mexc_trend_bot.py    ← live daily trend bot (PyQt5 GUI, run locally)
-  edge_lab.py
-  RUN_EDGE_LAB.bat      ← double-click to run edge_lab.py
-bots/
-  scalper_bot.py        ← MEXC futures scalper (PyQt5 GUI)
+download.html                  → the website's /download page
+desktop/ascent_desktop.py      → desktop app source (PyQt6)
+UPDATE.bat                     → deploy code updates to VPS
+organise.bat                   → sort Downloads folder by type
+bots/scalper_bot.py            → scalper bot (run on VPS)
+brain/edge_lab.py              → backtester (run locally or on VPS)
+brain/mexc_trend_bot.py        → trend/swing bot
+brain/swing_backtest.py        → quick Sharpe screener
+brain/RUN_EDGE_LAB.bat         → Windows launcher for edge lab
 ```
 
-## Quick start
+## Quick-start (Windows)
 
-### Run the scalper bot (Windows)
-1. Install Python 3.11 from python.org (tick "Add to PATH").
-2. Open a terminal in this folder and run:
+1. Install Python 3.11 from python.org (tick "Add to PATH")
+2. Open a terminal in this folder:
    ```
-   pip install PyQt5 pyqtgraph websocket-client requests
-   python bots/scalper_bot.py
+   pip install -r requirements.txt
    ```
-3. Paste your MEXC API key + secret when prompted.
+3. To run the edge lab backtest:
+   ```
+   brain\RUN_EDGE_LAB.bat
+   ```
+   Results → `brain/edge_results.csv`
 
-### Run the trend bot / edge lab (Windows)
-1. Same Python install as above.
-2. Install extra deps:
+4. To deploy an update to the VPS:
    ```
-   pip install PyQt5 pyqtgraph pandas numpy requests
+   UPDATE.bat
    ```
-3. Double-click `brain/RUN_EDGE_LAB.bat` or run:
-   ```
-   python brain/mexc_trend_bot.py
-   python brain/edge_lab.py
-   ```
+   (Requires rsync — install via Git for Windows or WSL)
 
-### Deploy an update to the VPS (owner only)
-1. Edit the three variables at the top of `UPDATE.bat`:
-   - `VPS_HOST` — your server IP or hostname
-   - `VPS_USER` — SSH user (usually `root`)
-   - `REMOTE_PATH` — path to the project on the VPS
-2. Double-click `UPDATE.bat`.
-   It will rsync (WSL) or scp the changed files and restart Docker.
+## Environment variables
 
-## Notes
-- `.env` and `keys.json` are **never** uploaded — they stay on your machine / VPS.
-- The `brain/` tools talk directly to MEXC; they do **not** go through the web platform.
-- `organise.bat` only touches `%USERPROFILE%\Downloads` — safe to run any time.
+Copy `.env.example` to `.env` and fill in your keys before running
+any bot locally. The VPS already has its own `.env`.
+
+## Support
+
+Open an issue or email support@ascentterminal.com

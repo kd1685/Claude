@@ -1,300 +1,417 @@
+#!/usr/bin/env python3
 """
-edge_lab.py — OWNER'S RESEARCH TOOL (lives in brain/, never deployed:
-the Docker build context intentionally excludes this folder).
+Ascent Terminal — Edge Lab (walk-forward backtester)
+=====================================================
+Runs a parallel walk-forward backtest on MEXC OHLCV data.
+Outputs:
+  brain/edge_results.csv  — per-fold metrics
+  brain/edge_report.html  — summary HTML report
 
-What it does
-────────────
-Scans every MEXC USDT-M futures symbol and back-tests a configurable
-set of simple indicators over the last N days of 1-h candles.  For
-each symbol + indicator combo it computes:
+Usage:
+  python edge_lab.py                  # full backtest
+  python edge_lab.py --dry-run        # fetch data + compute signals, no HTML
+  python edge_lab.py --symbol ETH/USDT --timeframe 4h
 
-  • Win-rate        (fraction of signals that were profitable)
-  • Avg gain        (mean return on winning trades, %)
-  • Avg loss        (mean return on losing trades, %)
-  • Expectancy      (win_rate * avg_gain - loss_rate * avg_loss)
-  • # signals       (sample size)
+Required env vars (loaded from ../.env or system):
+  MEXC_API_KEY, MEXC_SECRET_KEY
 
-Results are written to edge_results.csv and also shown ranked by
-expectancy in the terminal.
-
-Usage
-─────
-    python brain/edge_lab.py                  # all symbols, default config
-    python brain/edge_lab.py --symbols BTC ETH # specific symbols
-    python brain/edge_lab.py --days 60 --tf 4h # 60 days of 4-h candles
-    python brain/edge_lab.py --indicator ema_cross rsi_ob
-
-Requires:  pip install pandas numpy requests tqdm
+Optional env / CLI overrides (see argparse below):
+  EDGELAB_SYMBOL, EDGELAB_TIMEFRAME, EDGELAB_FOLDS,
+  EDGELAB_TRAIN_BARS, EDGELAB_TEST_BARS,
+  EDGELAB_EMA_FAST, EDGELAB_EMA_SLOW,
+  EDGELAB_RSI_PERIOD, EDGELAB_ATR_PERIOD,
+  EDGELAB_RISK_PCT, EDGELAB_ATR_MULT,
+  EDGELAB_ADX_PERIOD, EDGELAB_ADX_THRESHOLD,
+  EDGELAB_SWEEP           (1/0 — run ±20 % param sweep)
 """
 
-from __future__ import annotations
-import argparse, csv, os, sys, time
-from datetime import datetime, timezone
-from typing import Any
+import argparse
+import os
+import sys
+import math
+import json
+import time
+import logging
+import itertools
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import dataclass, field, asdict
+from pathlib import Path
+from typing import List, Dict, Tuple, Optional
 
+import ccxt
 import numpy as np
 import pandas as pd
-import requests
-from tqdm import tqdm
+from dotenv import load_dotenv
 
-# ── CONFIG ───────────────────────────────────────────────────────────────────
+load_dotenv(Path(__file__).parent.parent / ".env")
 
-DEFAULT_DAYS      = 30
-DEFAULT_TF        = '1h'
-DEFAULT_HOLD_BARS = 4          # how many bars to hold after signal
-MIN_SIGNALS       = 10         # skip combos with too few trades
-OUTPUT_CSV        = os.path.join(os.path.dirname(__file__), 'edge_results.csv')
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+log = logging.getLogger("edge_lab")
 
-MEXC_BASE     = 'https://contract.mexc.com'
-MEXC_KLINE    = '/api/v1/contract/kline'
-MEXC_SYMBOLS  = '/api/v1/contract/detail'
+# ── CLI / env config ─────────────────────────────────────────────────────────
+parser = argparse.ArgumentParser(description="Ascent Edge Lab")
+parser.add_argument("--dry-run",   action="store_true")
+parser.add_argument("--symbol",    default=os.getenv("EDGELAB_SYMBOL",    "BTC/USDT"))
+parser.add_argument("--timeframe", default=os.getenv("EDGELAB_TIMEFRAME", "1d"))
+parser.add_argument("--folds",     type=int, default=int(os.getenv("EDGELAB_FOLDS",      "5")))
+parser.add_argument("--train",     type=int, default=int(os.getenv("EDGELAB_TRAIN_BARS", "200")))
+parser.add_argument("--test",      type=int, default=int(os.getenv("EDGELAB_TEST_BARS",  "50")))
+args, _ = parser.parse_known_args()
 
-TF_TO_MINUTES = {
-    '1m': 1, '5m': 5, '15m': 15, '30m': 30,
-    '1h': 60, '4h': 240, '1d': 1440,
+BASE_PARAMS = {
+    "ema_fast":      int(os.getenv("EDGELAB_EMA_FAST",      "9")),
+    "ema_slow":      int(os.getenv("EDGELAB_EMA_SLOW",      "21")),
+    "rsi_period":    int(os.getenv("EDGELAB_RSI_PERIOD",    "14")),
+    "atr_period":    int(os.getenv("EDGELAB_ATR_PERIOD",    "14")),
+    "risk_pct":    float(os.getenv("EDGELAB_RISK_PCT",    "0.01")),
+    "atr_mult":    float(os.getenv("EDGELAB_ATR_MULT",    "1.5")),
+    "adx_period":    int(os.getenv("EDGELAB_ADX_PERIOD",    "14")),
+    "adx_threshold":float(os.getenv("EDGELAB_ADX_THRESHOLD","20.0")),
 }
-
-# ── MEXC DATA ────────────────────────────────────────────────────────────────
-
-def get_all_symbols() -> list[str]:
-    r = requests.get(f'{MEXC_BASE}{MEXC_SYMBOLS}', timeout=15)
-    r.raise_for_status()
-    data = r.json().get('data', [])
-    return [d['symbol'] for d in data if d.get('quoteCoin') == 'USDT' and d.get('state') == 0]
+RUN_SWEEP = os.getenv("EDGELAB_SWEEP", "0") == "1"
 
 
-def fetch_klines(symbol: str, tf: str, days: int) -> pd.DataFrame | None:
-    minutes  = TF_TO_MINUTES.get(tf, 60)
-    limit    = min(2000, int(days * 24 * 60 / minutes))
-    end_ts   = int(time.time())
-    start_ts = end_ts - days * 86400
-
-    try:
-        r = requests.get(
-            f'{MEXC_BASE}{MEXC_KLINE}',
-            params={'symbol': symbol, 'interval': tf,
-                    'start': start_ts, 'end': end_ts},
-            timeout=15,
-        )
-        r.raise_for_status()
-        raw = r.json().get('data', {})
-    except Exception:
-        return None
-
-    # MEXC returns arrays keyed by field name
-    try:
-        df = pd.DataFrame({
-            'ts':     raw['time'],
-            'open':   raw['realOpen'],
-            'high':   raw['high'],
-            'low':    raw['low'],
-            'close':  raw['realClose'],
-            'volume': raw['vol'],
-        })
-    except (KeyError, TypeError):
-        return None
-
-    if df.empty:
-        return None
-
-    df = df.astype({'ts': int, 'open': float, 'high': float,
-                    'low': float, 'close': float, 'volume': float})
-    df['dt'] = pd.to_datetime(df['ts'], unit='s', utc=True)
-    df.sort_values('ts', inplace=True)
-    df.reset_index(drop=True, inplace=True)
-    return df
+# ── Indicators ───────────────────────────────────────────────────────────────
+def _ema(arr: np.ndarray, n: int) -> np.ndarray:
+    k = 2.0 / (n + 1)
+    out = np.empty_like(arr)
+    out[0] = arr[0]
+    for i in range(1, len(arr)):
+        out[i] = arr[i] * k + out[i - 1] * (1 - k)
+    return out
 
 
-# ── INDICATORS ───────────────────────────────────────────────────────────────
-
-def ema(series: pd.Series, period: int) -> pd.Series:
-    return series.ewm(span=period, adjust=False).mean()
-
-
-def rsi(series: pd.Series, period: int = 14) -> pd.Series:
-    delta = series.diff()
-    gain  = delta.clip(lower=0).rolling(period).mean()
-    loss  = (-delta.clip(upper=0)).rolling(period).mean()
-    rs    = gain / loss.replace(0, np.nan)
-    return 100 - 100 / (1 + rs)
-
-
-def signals_ema_cross(df: pd.DataFrame,
-                      fast: int = 9, slow: int = 21) -> pd.Series:
-    """1 = long signal, -1 = short signal, 0 = nothing."""
-    f = ema(df['close'], fast)
-    s = ema(df['close'], slow)
-    prev_f = f.shift(1)
-    prev_s = s.shift(1)
-    long_  = (prev_f <= prev_s) & (f > s)
-    short_ = (prev_f >= prev_s) & (f < s)
-    sig = pd.Series(0, index=df.index)
-    sig[long_]  =  1
-    sig[short_] = -1
-    return sig
+def _rsi(closes: np.ndarray, n: int) -> np.ndarray:
+    delta = np.diff(closes)
+    gain  = np.where(delta > 0, delta, 0.0)
+    loss  = np.where(delta < 0, -delta, 0.0)
+    avg_g = np.full(len(closes), np.nan)
+    avg_l = np.full(len(closes), np.nan)
+    avg_g[n] = gain[:n].mean()
+    avg_l[n] = loss[:n].mean()
+    for i in range(n + 1, len(closes)):
+        avg_g[i] = (avg_g[i-1] * (n-1) + gain[i-1]) / n
+        avg_l[i] = (avg_l[i-1] * (n-1) + loss[i-1]) / n
+    rs = np.where(avg_l == 0, 100.0, avg_g / avg_l)
+    return np.where(np.isnan(avg_g), np.nan, 100.0 - 100.0 / (1 + rs))
 
 
-def signals_rsi_ob(df: pd.DataFrame,
-                   period: int = 14, ob: int = 70, os_: int = 30) -> pd.Series:
-    """Overbought/oversold mean-reversion."""
-    r = rsi(df['close'], period)
-    sig = pd.Series(0, index=df.index)
-    sig[r < os_] =  1   # oversold → long
-    sig[r > ob]  = -1   # overbought → short
-    return sig
+def _atr(highs: np.ndarray, lows: np.ndarray,
+         closes: np.ndarray, n: int) -> np.ndarray:
+    tr = np.maximum(
+        highs[1:] - lows[1:],
+        np.maximum(np.abs(highs[1:] - closes[:-1]),
+                   np.abs(lows[1:]  - closes[:-1])),
+    )
+    atr_arr = np.full(len(closes), np.nan)
+    atr_arr[n] = tr[:n].mean()
+    for i in range(n + 1, len(closes)):
+        atr_arr[i] = (atr_arr[i-1] * (n-1) + tr[i-1]) / n
+    return atr_arr
 
 
-def signals_bb_bounce(df: pd.DataFrame,
-                      period: int = 20, std: float = 2.0) -> pd.Series:
-    """Bollinger-band bounce."""
-    mid   = df['close'].rolling(period).mean()
-    band  = df['close'].rolling(period).std() * std
-    upper = mid + band
-    lower = mid - band
-    sig = pd.Series(0, index=df.index)
-    sig[df['close'] < lower] =  1
-    sig[df['close'] > upper] = -1
-    return sig
+def _adx(highs: np.ndarray, lows: np.ndarray,
+         closes: np.ndarray, n: int) -> np.ndarray:
+    """Wilder ADX."""
+    dm_pos = np.maximum(np.diff(highs), 0.0)
+    dm_neg = np.maximum(np.diff(-lows), 0.0)
+    # zero where the other is larger
+    mask = dm_pos > dm_neg
+    dm_pos = np.where(mask, dm_pos, 0.0)
+    dm_neg = np.where(~mask, dm_neg, 0.0)
+
+    tr = np.maximum(
+        highs[1:] - lows[1:],
+        np.maximum(np.abs(highs[1:] - closes[:-1]),
+                   np.abs(lows[1:]  - closes[:-1])),
+    )
+    length = len(highs)
+    atr14  = np.full(length, np.nan)
+    pdi14  = np.full(length, np.nan)
+    mdi14  = np.full(length, np.nan)
+    adx    = np.full(length, np.nan)
+
+    atr14[n] = tr[:n].mean()
+    pdi14[n] = dm_pos[:n].mean()
+    mdi14[n] = dm_neg[:n].mean()
+
+    for i in range(n + 1, length):
+        atr14[i] = (atr14[i-1] * (n-1) + tr[i-1])     / n
+        pdi14[i] = (pdi14[i-1] * (n-1) + dm_pos[i-1]) / n
+        mdi14[i] = (mdi14[i-1] * (n-1) + dm_neg[i-1]) / n
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        di_pos = 100 * pdi14 / atr14
+        di_neg = 100 * mdi14 / atr14
+        dx     = 100 * np.abs(di_pos - di_neg) / (di_pos + di_neg)
+
+    adx[2*n] = np.nanmean(dx[n:2*n])
+    for i in range(2*n + 1, length):
+        adx[i] = (adx[i-1] * (n-1) + dx[i]) / n
+
+    return adx
 
 
-def signals_vwap_dev(df: pd.DataFrame, threshold: float = 0.5) -> pd.Series:
-    """Price deviation from VWAP (uses cumulative intraday approx)."""
-    typical = (df['high'] + df['low'] + df['close']) / 3
-    cumvol  = df['volume'].cumsum()
-    cum_tp_vol = (typical * df['volume']).cumsum()
-    vwap    = cum_tp_vol / cumvol
-    dev     = (df['close'] - vwap) / vwap * 100
-    sig = pd.Series(0, index=df.index)
-    sig[dev < -threshold] =  1
-    sig[dev >  threshold] = -1
-    return sig
+# ── Back-test engine ─────────────────────────────────────────────────────────
+@dataclass
+class FoldResult:
+    fold:       int
+    params:     dict
+    n_trades:   int     = 0
+    total_pnl:  float   = 0.0
+    sharpe:     float   = 0.0
+    max_dd:     float   = 0.0
+    win_rate:   float   = 0.0
+    trade_pnls: list    = field(default_factory=list)
 
 
-INDICATORS: dict[str, Any] = {
-    'ema_cross':  signals_ema_cross,
-    'rsi_ob':     signals_rsi_ob,
-    'bb_bounce':  signals_bb_bounce,
-    'vwap_dev':   signals_vwap_dev,
-}
+def _run_fold(payload: dict) -> FoldResult:
+    """
+    Runs one walk-forward fold.  Called in a subprocess.
+    payload keys: fold, ohlcv_slice (list), params (dict)
+    """
+    fold   = payload["fold"]
+    ohlcv  = np.array(payload["ohlcv"], dtype=float)
+    p      = payload["params"]
 
+    highs  = ohlcv[:, 2]
+    lows   = ohlcv[:, 3]
+    closes = ohlcv[:, 4]
 
-# ── BACK-TEST ────────────────────────────────────────────────────────────────
+    fast   = _ema(closes, p["ema_fast"])
+    slow   = _ema(closes, p["ema_slow"])
+    rsi_v  = _rsi(closes, p["rsi_period"])
+    atr_v  = _atr(highs, lows, closes, p["atr_period"])
+    adx_v  = _adx(highs, lows, closes, p["adx_period"])
 
-def backtest(df: pd.DataFrame, signals: pd.Series,
-             hold_bars: int = DEFAULT_HOLD_BARS) -> dict | None:
-    """Simulate fixed-hold-period exits and return stats."""
-    results = []
-    closes  = df['close'].values
-    n       = len(closes)
+    equity = 10_000.0
+    pos    = None
+    trade_pnls: List[float] = []
 
-    for i in signals[signals != 0].index:
-        entry_idx = i + 1          # fill at next open (approx close)
-        exit_idx  = entry_idx + hold_bars
-        if exit_idx >= n:
+    for i in range(1, len(closes)):
+        if any(np.isnan(x) for x in [fast[i], slow[i], rsi_v[i], atr_v[i], adx_v[i]]):
             continue
-        entry = closes[entry_idx]
-        exit_ = closes[exit_idx]
-        if entry == 0:
-            continue
-        raw_ret = (exit_ - entry) / entry * 100
-        ret = raw_ret if signals[i] == 1 else -raw_ret
-        results.append(ret)
 
-    if len(results) < MIN_SIGNALS:
-        return None
+        price     = closes[i]
+        crossup   = fast[i-1] <= slow[i-1] and fast[i] > slow[i]
+        crossdown = fast[i-1] >= slow[i-1] and fast[i] < slow[i]
+        in_trend  = adx_v[i] >= p["adx_threshold"]
 
-    arr       = np.array(results)
-    wins      = arr[arr > 0]
-    losses    = arr[arr <= 0]
-    win_rate  = len(wins) / len(arr)
-    avg_gain  = float(wins.mean())  if len(wins)   else 0.0
-    avg_loss  = float(losses.mean()) if len(losses) else 0.0
-    expectancy= win_rate * avg_gain + (1 - win_rate) * avg_loss
+        # Exit
+        if pos:
+            hit_stop = (
+                (pos["side"] == "long"  and price <= pos["stop"]) or
+                (pos["side"] == "short" and price >= pos["stop"])
+            )
+            exit_sig  = (
+                (pos["side"] == "long"  and crossdown) or
+                (pos["side"] == "short" and crossup)
+            )
+            if hit_stop or exit_sig:
+                if pos["side"] == "long":
+                    pnl = (price - pos["entry"]) * pos["qty"]
+                else:
+                    pnl = (pos["entry"] - price) * pos["qty"]
+                pnl -= (pos["entry"] + price) * pos["qty"] * 0.001
+                equity += pnl
+                trade_pnls.append(pnl)
+                pos = None
 
-    return {
-        'n':          len(arr),
-        'win_rate':   round(win_rate, 4),
-        'avg_gain':   round(avg_gain,  4),
-        'avg_loss':   round(avg_loss,  4),
-        'expectancy': round(expectancy, 4),
-    }
+        # Entry
+        if not pos and in_trend:
+            stop_dist = atr_v[i] * p["atr_mult"]
+            qty       = (equity * p["risk_pct"]) / stop_dist if stop_dist > 0 else 0
+            if qty > 0:
+                if crossup and rsi_v[i] < 70:
+                    pos = {"side": "long",  "entry": price,
+                           "qty": qty, "stop": price - stop_dist}
+                elif crossdown and rsi_v[i] > 30:
+                    pos = {"side": "short", "entry": price,
+                           "qty": qty, "stop": price + stop_dist}
+
+    # Compute fold stats
+    result = FoldResult(fold=fold, params=p)
+    if trade_pnls:
+        arr        = np.array(trade_pnls)
+        result.n_trades  = len(arr)
+        result.total_pnl = float(arr.sum())
+        result.win_rate  = float((arr > 0).mean())
+        std = arr.std()
+        result.sharpe    = float(arr.mean() / std * math.sqrt(252)) if std > 0 else 0.0
+        cumulative = np.cumsum(arr)
+        peak       = np.maximum.accumulate(cumulative)
+        dd         = (peak - cumulative) / (np.abs(peak) + 1e-9)
+        result.max_dd    = float(dd.max())
+        result.trade_pnls = arr.tolist()
+
+    return result
 
 
-# ── MAIN ─────────────────────────────────────────────────────────────────────
+# ── Data fetcher ─────────────────────────────────────────────────────────────
+def fetch_ohlcv(symbol: str, timeframe: str,
+                needed: int) -> List[List[float]]:
+    exchange = ccxt.mexc({
+        "apiKey": os.getenv("MEXC_API_KEY", ""),
+        "secret": os.getenv("MEXC_SECRET_KEY", ""),
+        "enableRateLimit": True,
+    })
+    exchange.load_markets()
 
+    all_ohlcv: List[List[float]] = []
+    since = None
+    batch = 1000
+
+    while len(all_ohlcv) < needed:
+        candles = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=batch)
+        if not candles:
+            break
+        if all_ohlcv and candles[0][0] <= all_ohlcv[-1][0]:
+            candles = [c for c in candles if c[0] > all_ohlcv[-1][0]]
+        all_ohlcv.extend(candles)
+        since = all_ohlcv[-1][0] + 1
+        if len(candles) < batch:
+            break
+        time.sleep(exchange.rateLimit / 1000)
+
+    log.info("fetched_candles", symbol=symbol, timeframe=timeframe, n=len(all_ohlcv))
+    return all_ohlcv
+
+
+# ── Param sweep ───────────────────────────────────────────────────────────────
+def build_sweep_params(base: dict) -> List[dict]:
+    """±20 % sweep on integer and float knobs."""
+    sweep_keys = ["ema_fast", "ema_slow", "rsi_period",
+                  "atr_period", "atr_mult", "adx_threshold"]
+    variants: Dict[str, list] = {}
+    for k in sweep_keys:
+        v = base[k]
+        if isinstance(v, int):
+            lo = max(2, int(v * 0.8))
+            hi = int(v * 1.2) + 1
+            variants[k] = list(range(lo, hi + 1, max(1, (hi - lo) // 3)))
+        else:
+            variants[k] = [round(v * f, 4) for f in (0.8, 1.0, 1.2)]
+
+    combos = list(itertools.product(*variants.values()))
+    result = []
+    for combo in combos:
+        p = dict(base)
+        for k, val in zip(variants.keys(), combo):
+            p[k] = val
+        # sanity: ema_fast < ema_slow
+        if p["ema_fast"] < p["ema_slow"]:
+            result.append(p)
+    return result
+
+
+# ── HTML report ───────────────────────────────────────────────────────────────
+def write_html_report(results: List[FoldResult], symbol: str,
+                       timeframe: str, out_path: Path):
+    rows = "".join(
+        f"<tr><td>{r.fold}</td><td>{r.n_trades}</td>"
+        f"<td>{r.total_pnl:+.2f}</td><td>{r.sharpe:.3f}</td>"
+        f"<td>{r.max_dd:.1%}</td><td>{r.win_rate:.1%}</td></tr>"
+        for r in results
+    )
+    avg_sharpe = np.mean([r.sharpe for r in results]) if results else 0
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>Edge Lab Report — {symbol} {timeframe}</title>
+<style>
+  body{{font-family:sans-serif;padding:2em}}
+  h1{{color:#1a1a2e}}table{{border-collapse:collapse;width:100%}}
+  th,td{{border:1px solid #ccc;padding:.5em 1em;text-align:right}}
+  th{{background:#1a1a2e;color:#fff}}
+  .good{{color:green}}.bad{{color:red}}
+</style></head><body>
+<h1>Edge Lab — {symbol} {timeframe}</h1>
+<p>Average Sharpe across folds: <strong class="{'good' if avg_sharpe > 1 else 'bad'}">{avg_sharpe:.3f}</strong></p>
+<table><thead><tr>
+  <th>Fold</th><th>Trades</th><th>PnL (USDT)</th>
+  <th>Sharpe</th><th>Max DD</th><th>Win Rate</th>
+</tr></thead><tbody>{rows}</tbody></table>
+</body></html>"""
+    out_path.write_text(html, encoding="utf-8")
+    log.info("html_report_written", path=str(out_path))
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
 def main():
-    ap = argparse.ArgumentParser(description='Ascent Edge Lab')
-    ap.add_argument('--symbols',    nargs='*', help='Symbols to test (default: all USDT-M)')
-    ap.add_argument('--days',       type=int,   default=DEFAULT_DAYS)
-    ap.add_argument('--tf',         default=DEFAULT_TF,
-                    choices=list(TF_TO_MINUTES))
-    ap.add_argument('--hold',       type=int,   default=DEFAULT_HOLD_BARS)
-    ap.add_argument('--indicator',  nargs='*',  choices=list(INDICATORS),
-                    default=list(INDICATORS))
-    ap.add_argument('--top',        type=int,   default=20,
-                    help='Show top N results')
-    args = ap.parse_args()
+    needed = args.folds * (args.train + args.test) + max(BASE_PARAMS.values()) + 10
+    log.info("fetching_data", symbol=args.symbol, timeframe=args.timeframe,
+             needed=needed)
 
-    print('\n  Ascent Edge Lab')
-    print(f'  Timeframe: {args.tf}  Days: {args.days}  Hold: {args.hold} bars')
-    print(f'  Indicators: {", ".join(args.indicator)}\n')
+    ohlcv = fetch_ohlcv(args.symbol, args.timeframe, needed)
+    if len(ohlcv) < needed:
+        log.error("not_enough_data", have=len(ohlcv), need=needed)
+        sys.exit(1)
 
-    # Resolve symbols
-    if args.symbols:
-        symbols = [s.upper() + ('_USDT' if not s.endswith('_USDT') else '')
-                   for s in args.symbols]
-    else:
-        print('  Fetching symbol list from MEXC ...')
-        symbols = get_all_symbols()
-        print(f'  {len(symbols)} USDT-M symbols found\n')
+    if args.dry_run:
+        log.info("dry_run_complete", candles=len(ohlcv))
+        sys.exit(0)
 
-    rows: list[dict] = []
+    # Build folds
+    fold_size = args.train + args.test
+    folds_data = []
+    for fold_idx in range(args.folds):
+        start = fold_idx * args.test
+        end   = start + fold_size
+        if end > len(ohlcv):
+            break
+        # train on first `train` bars, test on last `test` bars of slice
+        test_slice = ohlcv[start + args.train : end]
+        # we need the full slice for indicator warm-up
+        full_slice = ohlcv[start : end]
+        folds_data.append({"fold": fold_idx, "ohlcv": full_slice,
+                            "params": BASE_PARAMS})
 
-    for sym in tqdm(symbols, unit='sym', desc='Scanning'):
-        df = fetch_klines(sym, args.tf, args.days)
-        if df is None or len(df) < 50:
-            continue
-        for ind_name in args.indicator:
-            fn  = INDICATORS[ind_name]
-            sig = fn(df)
-            if sig.abs().sum() == 0:
-                continue
-            stats = backtest(df, sig, hold_bars=args.hold)
-            if stats is None:
-                continue
-            rows.append({'symbol': sym, 'indicator': ind_name, **stats})
+    # Optionally add sweep variants on fold 0
+    if RUN_SWEEP:
+        for p in build_sweep_params(BASE_PARAMS):
+            folds_data.append({"fold": 0, "ohlcv": folds_data[0]["ohlcv"],
+                                "params": p})
 
-    if not rows:
-        print('No results.  Try --days 60 or fewer symbols.')
-        return
+    log.info("running_folds", total=len(folds_data))
+    results: List[FoldResult] = []
 
-    result_df = pd.DataFrame(rows).sort_values('expectancy', ascending=False)
+    with ProcessPoolExecutor() as pool:
+        futures = {pool.submit(_run_fold, fd): fd["fold"] for fd in folds_data}
+        for fut in as_completed(futures):
+            try:
+                res = fut.result()
+                results.append(res)
+                log.info("fold_done", fold=res.fold,
+                          n_trades=res.n_trades,
+                          sharpe=round(res.sharpe, 3),
+                          pnl=round(res.total_pnl, 2))
+            except Exception as exc:  # noqa: BLE001
+                log.error("fold_error", fold=futures[fut], error=str(exc))
 
-    # Save CSV
-    result_df.to_csv(OUTPUT_CSV, index=False)
-    print(f'\n  Results saved → {OUTPUT_CSV}')
+    # Write CSV
+    out_dir = Path(__file__).parent
+    csv_path = out_dir / "edge_results.csv"
+    df = pd.DataFrame([asdict(r) for r in results])
+    df.drop(columns=["trade_pnls"], errors="ignore").to_csv(csv_path, index=False)
+    log.info("csv_written", path=str(csv_path))
 
-    # Print top N
-    print(f'\n  TOP {args.top} by expectancy:\n')
-    top = result_df.head(args.top)
-    col_w = {'symbol': 14, 'indicator': 12, 'n': 6, 'win_rate': 10,
-              'avg_gain': 10, 'avg_loss': 10, 'expectancy': 12}
-    header = ''.join(c.ljust(col_w[c]) for c in col_w)
-    print('  ' + header)
-    print('  ' + '-' * len(header))
-    for _, row in top.iterrows():
-        line = (
-            str(row['symbol']).ljust(col_w['symbol']) +
-            str(row['indicator']).ljust(col_w['indicator']) +
-            str(row['n']).ljust(col_w['n']) +
-            f"{row['win_rate']:.1%}".ljust(col_w['win_rate']) +
-            f"{row['avg_gain']:.2f}%".ljust(col_w['avg_gain']) +
-            f"{row['avg_loss']:.2f}%".ljust(col_w['avg_loss']) +
-            f"{row['expectancy']:.2f}%".ljust(col_w['expectancy'])
-        )
-        print('  ' + line)
-    print()
+    # Write HTML
+    html_path = out_dir / "edge_report.html"
+    write_html_report(
+        [r for r in results if r.params == BASE_PARAMS],
+        args.symbol, args.timeframe, html_path
+    )
+
+    avg_sharpe = np.mean([r.sharpe for r in results if r.params == BASE_PARAMS])
+    log.info("backtest_complete",
+             avg_sharpe=round(float(avg_sharpe), 3),
+             total_folds=len(results))
+
+    if avg_sharpe < 1.0:
+        log.warning("sharpe_below_1", sharpe=round(float(avg_sharpe), 3))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

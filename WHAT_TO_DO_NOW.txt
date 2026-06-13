@@ -1,53 +1,49 @@
 # ✅ WHAT TO DO NOW — owner runbook (post-upgrade)
 
-Everything in the platform is built and tested. The only things left
-before the site accepts real money are listed below in order.
+Everything in the platform is built and tested. These are YOUR steps, in order.
+Most take minutes. The only slow one is #8 (the scalper backtest you asked about).
 
-────────────────────────────────────────────────
- TODAY (takes ~1 hour)
-────────────────────────────────────────────────
+────────────────────────────────────────────────────────
+TODAY (30–45 min)
+────────────────────────────────────────────────────────
 
-1.  Upload the code
-    – Unzip ascent_terminal_final.zip on your Windows machine.
-    – Use WinSCP (or UPDATE.bat) to copy the contents into
-      /root/ascent_terminal/ on the VPS.  Click "overwrite" if asked.
-    – Your .env and data/ folder are NOT in the zip; they are safe.
+1. DEPLOY THE UPDATE
+   ▶ Windows: open a terminal in this folder, run:  UPDATE.bat
+   ▶ It rsyncs the code to the VPS, skips .env / keys.json / data/
+   ▶ Then SSH in and:  pip install -r requirements.txt
+                       sudo systemctl restart ascent
 
-2.  Restart Docker
-    SSH into VPS:
-        cd /root/ascent_terminal
-        docker compose down && docker compose up -d --build
-    Check:
-        curl http://localhost:8000/health   → {"status":"ok"}
+2. VERIFY THE WEBSITE
+   ▶ https://ascentterminal.com  — no JS errors
+   ▶ /download  — button works, file downloads
+   ▶ /pricing   — tiers correct
+   ▶ Log in as test user — dashboard loads
 
-3.  Point your domain
-    – DNS: A record → your VPS IP
-    – Wait for propagation (5-60 min), then:
-        certbot --nginx -d your-domain.com
+3. SMOKE-TEST THE SCALPER
+   ▶ On VPS:  cd /opt/ascent/brain && python edge_lab.py --dry-run
+   ▶ Should exit 0 with a signal summary, no tracebacks
 
-4.  Verify HTTPS
-        curl https://your-domain.com/health  → {"status":"ok"}
+4. (OPTIONAL) FULL BACKTEST — only if you changed strategy params
+   ▶ Windows: double-click  brain/RUN_EDGE_LAB.bat
+   ▶ Results in brain/edge_results.csv  (Sharpe should be > 1)
 
-────────────────────────────────────────────────
- TOMORROW (takes ~30 min)
-────────────────────────────────────────────────
+────────────────────────────────────────────────────────
+TOMORROW (15 min)
+────────────────────────────────────────────────────────
 
-5.  Set up Stripe (see GO_LIVE_STEPS §3 for the exact commands)
-    – Create Monthly + Yearly prices in Stripe dashboard.
-    – Add price IDs + webhook secret to platform/.env on VPS.
-    – Register the webhook endpoint in Stripe.
-    – Test with:  stripe trigger checkout.session.completed
-    – Set PAYMENTS_LIVE=true in .env, restart Docker.
+5. SWITCH STRIPE TO LIVE
+   ▶ Stripe dashboard → Developers → API keys → copy sk_live_…
+   ▶ Edit VPS .env:  STRIPE_SECRET_KEY=sk_live_…
+   ▶ Also update:    STRIPE_WEBHOOK_SECRET=whsec_…  (live endpoint)
+   ▶ sudo systemctl restart ascent
+   ▶ Do one real £1 test purchase
 
-6.  Do a final smoke test
-    – Register → subscribe (test card 4242…) → confirm dashboard unlocks.
-    – Visit /admin/health — all green.
+────────────────────────────────────────────────────────
+NOT YOUR JOB (already done)
+────────────────────────────────────────────────────────
 
-────────────────────────────────────────────────
- THEN YOU'RE LIVE — go announce it!
-────────────────────────────────────────────────
-
-Optional next steps (whenever you're ready):
-  • Set REFERRAL_ENABLED=true to activate the referral system.
-  • Add ALERT_WEBHOOK_URL to get Discord/Slack alerts.
-  • Set up a daily DB backup cron (see LAUNCH_PLAN.txt §5).
+  ✓ Scalper bot rewritten (ATR sizing, fees, Redis heartbeat, Prometheus)
+  ✓ Edge lab upgraded (parallel walk-forward, regime filter, HTML report)
+  ✓ MEXC trend bot hardened (Kelly sizing, drawdown breaker, reconciliation)
+  ✓ Website download page wired to real binary
+  ✓ UPDATE.bat and organise.bat written

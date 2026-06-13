@@ -1,101 +1,96 @@
 # Ascent Terminal — Project Handoff (current as of 2026-06-12, launch build)
 
-Paste this into a new Claude conversation whenever you want to continue work.
+Paste this into a new chat as the project brief. Upload the current
+`AscentTerminal` zip with it — this file describes the whole system.
 
 ---
 
 ## What this project is
 
-Ascent Terminal is a **self-hosted, subscription-gated trading-bot dashboard**.
-Users register, pay via Stripe, and get access to a web UI that runs two live
-bots (MEXC futures scalper + daily trend-follower) and shows real-time P&L,
-trade history, and risk controls.  The owner has a private `/admin` panel.
+Ascent Terminal is a subscription SaaS for retail traders:
+- **Website** — marketing + auth + Stripe checkout (Flask, hosted on VPS)
+- **Desktop app** — Windows tray app that streams live signals (PyQt6)
+- **Trading bots** — scalper and swing/trend bots (MEXC exchange, CCXT)
+- **Edge lab** — walk-forward backtesting framework to validate signals
 
-Stack: Python 3.11 · FastAPI · Jinja2 · SQLite (via SQLAlchemy) · Stripe ·
-WebSockets · Docker Compose · Nginx · Let's Encrypt.
+Live domain: https://ascentterminal.com  
+VPS: Ubuntu 22.04, `/opt/ascent/`  
+Python 3.11, venv at `/opt/ascent/venv/`
 
 ---
 
-## Folder layout (top of repo)
+## Folder map
 
 ```
-ascent_terminal/
-├── platform/          ← FastAPI app (routes, models, templates, static)
-│   ├── main.py        ← app factory + lifespan
-│   ├── routes/        ← auth, dashboard, admin, stripe, bots, referral
-│   ├── models.py      ← SQLAlchemy ORM (User, Subscription, Trade, …)
-│   ├── stripe_client.py
-│   ├── alerts.py      ← email / webhook alerting
-│   ├── templates/     ← Jinja2 HTML
-│   └── static/        ← CSS / JS / icons
+AscentTerminal/
+├── platform/          # Flask web app
+│   ├── app.py         # main Flask app + all routes
+│   ├── models.py      # SQLAlchemy models (User, Subscription, Signal)
+│   ├── stripe_utils.py
+│   ├── email_utils.py
+│   ├── templates/     # Jinja2 HTML templates
+│   ├── static/        # CSS, JS, images
+│   ├── data/          # SQLite DB + uploads (gitignored)
+│   └── keys.json      # Stripe + email secrets (gitignored)
 ├── bots/
-│   └── scalper_bot.py ← MEXC futures WebSocket scalper (PyQt5 GUI + headless)
-├── brain/             ← owner-only research tools (never deployed)
-│   ├── edge_lab.py
-│   ├── mexc_trend_bot.py
-│   └── swing_backtest.py
-├── docker-compose.yml
-├── Dockerfile
+│   └── scalper_bot.py # high-frequency scalper (MEXC)
+├── brain/
+│   ├── edge_lab.py        # walk-forward backtester
+│   ├── mexc_trend_bot.py  # swing/trend bot
+│   ├── swing_backtest.py  # quick Sharpe screener
+│   └── RUN_EDGE_LAB.bat   # Windows launcher for edge lab
+├── desktop/
+│   └── ascent_desktop.py  # PyQt6 tray app
+├── .env               # VPS env vars (gitignored)
 ├── requirements.txt
-├── .env               ← secrets (never in repo)
-└── keys.json          ← MEXC API keys (never in repo)
+└── README_WINDOWS_KIT.md
 ```
 
 ---
 
-## Current state (what is done)
+## Current state (what was just done)
 
-| Area | Status |
-|------|--------|
-| FastAPI app skeleton | ✅ done |
-| Auth (register / login / JWT cookies) | ✅ done |
-| Stripe checkout + webhook handler | ✅ done |
-| Subscription gating middleware | ✅ done |
-| Dashboard with live WebSocket feed | ✅ done |
-| Scalper bot (headless mode for server) | ✅ done |
-| Trend bot (daily cron via APScheduler) | ✅ done |
-| Admin panel (/admin/health, /admin/users) | ✅ done |
-| Referral system | ✅ done |
-| Email alerts | ✅ done |
-| Docker Compose + Nginx config | ✅ done |
-| Stripe products / webhook endpoint | ⏳ do tomorrow (see GO_LIVE_STEPS §3) |
-| Point domain + SSL cert | ⏳ whenever ready |
+1. **Scalper bot** fully rewritten — adaptive ATR sizing, fee-aware PnL,
+   Redis heartbeat, Prometheus metrics, graceful shutdown.
+2. **Edge lab** upgraded — parallel walk-forward, regime filter,
+   auto-parameter sweep, CSV + HTML report output.
+3. **MEXC trend bot** hardened — Kelly sizing, drawdown circuit-breaker,
+   position reconciliation on startup.
+4. **Website** — download page wired to real binary, pricing page updated,
+   Stripe webhook signature verification fixed.
+5. **UPDATE.bat / organise.bat** — deployment helpers for Windows.
 
 ---
 
-## Secrets that must exist on the VPS (never committed)
+## What's left before full launch
+
+| # | Task | Who | ETA |
+|---|------|-----|-----|
+| 1 | Switch Stripe test→live key | Owner | tomorrow |
+| 2 | Upload update to VPS (`UPDATE.bat`) | Owner | today |
+| 3 | Restart systemd services | Owner | today |
+| 4 | Smoke-test website + download | Owner | today |
+| 5 | Run edge lab backtest, confirm Sharpe > 1 | Owner | today |
+
+---
+
+## Key env vars (.env on VPS)
 
 ```
-platform/.env
-    SECRET_KEY=<random 32-char hex>
-    DATABASE_URL=sqlite:///./data/ascent.db
-    STRIPE_SECRET_KEY=sk_live_…
-    STRIPE_PUBLISHABLE_KEY=pk_live_…
-    STRIPE_PRICE_MONTHLY=price_…
-    STRIPE_PRICE_YEARLY=price_…
-    STRIPE_WEBHOOK_SECRET=whsec_…
-    MEXC_API_KEY=…
-    MEXC_API_SECRET=…
-    ADMIN_EMAIL=you@example.com
-    SMTP_HOST=smtp.example.com
-    SMTP_USER=you@example.com
-    SMTP_PASS=…
-    REFERRAL_ENABLED=false
-    PAYMENTS_LIVE=false
-
-platform/keys.json   ← {"api_key": "…", "api_secret": "…"}
+FLASK_SECRET_KEY=…
+STRIPE_SECRET_KEY=sk_live_…   # still sk_test_ until tomorrow
+STRIPE_WEBHOOK_SECRET=whsec_…
+EMAIL_USER=…
+EMAIL_PASS=…
+DATABASE_URL=sqlite:///data/ascent.db
+REDIS_URL=redis://localhost:6379/0
 ```
 
 ---
 
-## How to continue in a new conversation
+## How to continue this project in a new chat
 
 1. Paste this file.
-2. Say which part you want to work on.
-3. Claude will ask for the relevant source files if needed.
-
-Useful prompts:
-- "Show me the Stripe webhook handler and help me test it."
-- "Add a 7-day free trial to the subscription flow."
-- "Write a smoke-test script that hits every route."
-- "Help me set up the Nginx + Let's Encrypt config."
+2. Upload the zip (so Claude can read the actual source).
+3. Say what you want to do next — the context above is enough to
+   pick up without re-explaining the whole project.
