@@ -2,7 +2,6 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
@@ -12,9 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application source (see .dockerignore for exclusions)
 COPY . .
 
 EXPOSE 8000
 
-CMD ["uvicorn", "auth:app", "--host", "0.0.0.0", "--port", "8000"]
+# Trust Caddy's X-Forwarded-For so per-IP rate limiting works correctly
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
