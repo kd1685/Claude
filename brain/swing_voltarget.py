@@ -87,7 +87,7 @@ def main():
           f"max size {a.max_lev}x | ~{years:.1f}y")
     print(f"  Strategy : {(eq-1)*100:>+9.1f}%   CAGR {cagr:>+6.1f}%   maxDD {maxdd(curve):>5.1f}%")
     print(f"  Buy&hold : {(bh-1)*100:>+9.1f}%   CAGR {bh_cagr:>+6.1f}%   maxDD {maxdd(bh_curve):>5.1f}%")
-    print("──────────────────────────────────────────────────")
+    print("─"*50)
     print("  Goal: a drawdown you can live with (~15-25%) at a CAGR that beats")
     print("  buy&hold risk-adjusted. Raise --target_vol for more return + more DD.")
 

@@ -5,7 +5,7 @@ import requests, time
 
 warnings.filterwarnings("ignore")
 
-# ── CLI ──────────────────────────────────────────────────────────────────────
+# ── CLI ────────────────────────────────────────────────────────────────────────────
 ap = argparse.ArgumentParser()
 ap.add_argument("--interval", default="1d")
 ap.add_argument("--candles",  type=int, default=1000)
@@ -62,7 +62,7 @@ def backtest_oos(prices, ema_period):
         }
     return results
 
-# ── RUN ──────────────────────────────────────────────────────────────────────
+# ── RUN ────────────────────────────────────────────────────────────────────────────
 print(f"\nWIDER UNIVERSE ROBUSTNESS TEST  (EMA{args.ema}, {args.candles} candles, {args.interval})")
 print(f"{'Symbol':<12} {'IS_strat':>9} {'IS_sDD':>7} {'IS_bnh':>7} {'IS_bDD':>7} | "
       f"{'OOS_strat':>9} {'OOS_sDD':>7} {'OOS_bnh':>7} {'OOS_bDD':>7}  EDGE?")

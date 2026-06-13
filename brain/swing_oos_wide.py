@@ -5,7 +5,7 @@ import requests, time
 
 warnings.filterwarnings("ignore")
 
-# ── CLI ──────────────────────────────────────────────────────────────────────
+# ── CLI ────────────────────────────────────────────────────────────────────────────
 ap = argparse.ArgumentParser()
 ap.add_argument("--interval", default="Day1")   # MEXC futures: Min1 Min5 Min15 Min30 Min60 Hour4 Day1
 ap.add_argument("--candles",  type=int, default=1000)
@@ -14,7 +14,7 @@ args = ap.parse_args()
 
 MEXC_REST = "https://contract.mexc.com"
 
-# ── SYMBOL LIST ───────────────────────────────────────────────────────────────
+# ── SYMBOL LIST ────────────────────────────────────────────────────────────────────────────────
 SYMBOLS = [
     # ── Original winners
     "BTC_USDT","ETH_USDT","SOL_USDT","BNB_USDT","XRP_USDT",
@@ -32,7 +32,7 @@ SYMBOLS = [
     "ETC_USDT","BCH_USDT","NEO_USDT","XMR_USDT",
 ]
 
-# ── FETCH (MEXC Futures — same endpoint as your bot) ─────────────────────────
+# ── FETCH (MEXC Futures — same endpoint as your bot) ─────────────────────────────────────
 def fetch(symbol: str, interval: str, limit: int):
     """Uses contract.mexc.com/api/v1/contract/kline — identical to your bot."""
     try:
@@ -54,7 +54,7 @@ def fetch(symbol: str, interval: str, limit: int):
     except Exception:
         return None
 
-# ── BACKTEST (50/50 IS / OOS split) ──────────────────────────────────────────
+# ── BACKTEST (50/50 IS / OOS split) ─────────────────────────────────────────────────────────────
 def backtest_oos(prices: pd.Series, ema_period: int) -> dict:
     results = {}
     mid = len(prices) // 2
@@ -73,7 +73,7 @@ def backtest_oos(prices: pd.Series, ema_period: int) -> dict:
         }
     return results
 
-# ── RUN ───────────────────────────────────────────────────────────────────────
+# ── RUN ──────────────────────────────────────────────────────────────────────────────────
 HDR = (f"  {'Symbol':<14} {'IS_str':>7} {'IS_sDD':>7} {'IS_bnh':>7} {'IS_bDD':>7}  |"
        f"  {'OOS_str':>7} {'OOS_sDD':>7} {'OOS_bnh':>7} {'OOS_bDD':>7}  EDGE?")
 
