@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 from fastapi import Depends, Header, HTTPException
@@ -12,11 +13,44 @@ from pydantic import BaseModel
 ACCESS_KEYS: set[str] = set()
 KEYS_FILE = Path("keys.json")
 
+# Brute-force lockout: ip -> (fail_count, first_fail_ts)
+_lockout: dict[str, tuple[int, float]] = {}
+LOCKOUT_ATTEMPTS = 10
+LOCKOUT_SECONDS = 900  # 15 min
+
 
 def init_env_keys(raw: str) -> None:
     """Populate ACCESS_KEYS from a comma-separated env string."""
     global ACCESS_KEYS
     ACCESS_KEYS = set(filter(None, raw.split(",")))
+
+
+def is_locked(ip: str) -> float:
+    """Return seconds remaining in lockout, or 0 if not locked."""
+    entry = _lockout.get(ip)
+    if not entry:
+        return 0
+    count, first = entry
+    if count < LOCKOUT_ATTEMPTS:
+        return 0
+    elapsed = time.time() - first
+    remaining = LOCKOUT_SECONDS - elapsed
+    if remaining <= 0:
+        _lockout.pop(ip, None)
+        return 0
+    return remaining
+
+
+def record_fail(ip: str) -> None:
+    entry = _lockout.get(ip)
+    if entry:
+        _lockout[ip] = (entry[0] + 1, entry[1])
+    else:
+        _lockout[ip] = (1, time.time())
+
+
+def record_success(ip: str) -> None:
+    _lockout.pop(ip, None)
 
 
 def _load_keys() -> dict[str, dict]:
