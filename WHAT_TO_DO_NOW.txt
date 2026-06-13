@@ -1,63 +1,37 @@
-════════════════════════════════════════════════════════════════════
- ASCENT TERMINAL — WHAT TO DO RIGHT NOW
-════════════════════════════════════════════════════════════════════
-You asked: what should I do next?
-Answer: three things, in order. Everything else can wait.
+WHAT TO DO NOW — Ascent Terminal
+=================================
 
-──────────────────────────────────────────────────────────────────
- 1. UPLOAD THE NEW CODE + REBUILD (10 min)
-──────────────────────────────────────────────────────────────────
-Your VPS still runs the old build. This zip has the proxy fix,
-the encrypted-email update, the new bot-allowance logic, and all
-the other changes listed in UPDATE_NOTES.md.
+You have the full release kit. Here is the shortest path to money in.
 
-  From your PC:
-      scp -r AscentTerminal root@<SERVER_IP>:/root/
+1. DEPLOY THE SERVER (30 min)
+   Follow GO_LIVE_STEPS.md exactly.
+   The one-liner setup script does most of it.
 
-  On the server:
-      cd /root/AscentTerminal/platform
-      docker compose up -d --build
+2. FILL IN .ENV (10 min)
+   platform/.env.example has every variable explained.
+   You need: Stripe live key, Whop OAuth, Discord webhook, MEXC API.
 
-Your .env, keys.json and data/ are NEVER touched by scp — only
-code files overwrite. The rebuild picks up the new Dockerfile
-(uvicorn proxy-headers fix) and new Python deps automatically.
+3. TEST IT (5 min)
+   python3 -m pytest platform/tests/ -v
+   Visit https://ascentterminal.com — landing should load.
+   Log in with your founder key — terminal should load.
 
-──────────────────────────────────────────────────────────────────
- 2. FIX THE TWO SECURITY GAPS (5 min after the rebuild)
-──────────────────────────────────────────────────────────────────
-Both live in .env on the server (nano .env, then force-recreate):
+4. SET UP STRIPE WEBHOOKS (5 min)
+   Stripe dashboard → Webhooks → Add endpoint
+   URL: https://ascentterminal.com/billing/webhook
+   Copy signing secret → paste into .env → restart app.
 
-  a) TV_WEBHOOK_SECRET is BLANK — anyone can POST fake alerts.
-     Generate a secret:  openssl rand -hex 32
-     Put it in .env AND in every TradingView alert's JSON body
-     as  "secret":"<that value>".
+5. SET UP DISCORD (5 min)
+   python3 discord/add_alerts_channel.py
+   This creates the #ascent-alerts channel and wires the webhook.
 
-  b) EXECUTE_KEY and DISCORD_WEBHOOK_URL were in the .env you
-     pasted into chat. Low-risk (only you can see it), but
-     cheap to fix: generate a new EXECUTE_KEY (same openssl
-     command), recreate the Discord webhook, update .env.
+6. PUBLISH WHOP LISTING (20 min)
+   Use the copy in whop_patreon/REBRAND_COPY.md
+   Set prices: Observer $15, Operator $39, Architect $89
+   Connect your Stripe account.
 
-  Apply:  docker compose up -d --force-recreate
-  (.env changes only take effect at container start.)
+7. ANNOUNCE (whenever you're ready)
+   Post on X, Discord, Reddit.
+   The landing page is already live — just send people to ascentterminal.com.
 
-──────────────────────────────────────────────────────────────────
- 3. SET UP STRIPE SO THE SITE TAKES MONEY (30 min, tomorrow)
-──────────────────────────────────────────────────────────────────
-This is the only thing between you and automated revenue.
-Full instructions: §3 of GO_LIVE_STEPS.md.
-Short version:
-  • Resend.com (free) for SMTP → .env SMTP_* values
-  • 5 Stripe Products + Payment Links (3 tiers + 2 add-ons)
-  • Webhook at /api/stripe-webhook → .env STRIPE_WEBHOOK_SECRET
-  • Paste link URLs into static/landing.html → redeploy
-  • Test with Stripe test mode → key arrives by email
-
-──────────────────────────────────────────────────────────────────
- THAT'S THE CRITICAL PATH. EVERYTHING ELSE IS OPTIONAL FOR NOW.
-──────────────────────────────────────────────────────────────────
-Once those three are done, the platform is live, secure, and
-taking payments. Then pick up the rest of GO_LIVE_STEPS.md
-at your own pace (Cloudflare, forward service, Windows app, etc.).
-
-Stuck on any step? Paste the error and I'll fix it.
-════════════════════════════════════════════════════════════════════
+That's it. Once you have 1 paying member, the system is working.

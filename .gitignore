@@ -3,7 +3,6 @@ __pycache__/
 platform/data/
 *.pyc
 platform/keys.json
-*.log
-dist/
-build/
-.DS_Store
+platform/certs/*.pem
+brain/edge_cache/
+brain/edge_results.csv

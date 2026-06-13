@@ -1,99 +1,63 @@
-# AscentTerminal — Windows Kit
+# Ascent Terminal — Windows Kit
 
-This folder ships a **local Windows desktop wrapper** for the Ascent Terminal
-server. It lets subscribers (or you) run the platform on a Windows PC without
-Docker or a browser tab — the app looks and feels native.
+This folder contains everything needed to run and manage Ascent Terminal from a
+Windows machine.
 
 ---
 
 ## What's included
 
-| Path | What it is |
-|---|---|
-| `platform/desktop/build_desktop.py` | PyInstaller build script — wraps `server_launcher/ascent_server.py` + pywebview into a single folder |
-| `server_launcher/ascent_server.py` | Replaces the old `.bat` launchers. Starts the FastAPI server, opens the webview window. Supports `--setup` for first-run env config. |
-| `installer/AscentTerminal.iss` | Inno Setup script — turns the PyInstaller output into a proper Windows installer (Start-menu shortcut, uninstaller, version info) |
-| `installer/icon.ico` | App icon (export `brand/app-icon-ios-1024.png` → `.ico` using https://convertico.com or Pillow) |
+```
+tools/
+  DEPLOY_TO_VPS.bat      Deploy latest code to your VPS
+  GENERATE_SECRETS.bat   Generate SECRET_KEY and MEXC keys helper
+  NEW_KEY.bat            Issue a new member API key
+  REVOKE_KEY.bat         Revoke a member API key
+  RUN_TESTS.bat          Run the test suite
+  TEST_DISCORD_WEBHOOK.bat  Send a test Discord alert
+
+brain/
+  RUN_EDGE_LAB.bat       Run the walk-forward parameter optimiser
+
+bots/
+  scalper_bot.py         The scalper bot (give this to members)
+
+installer/
+  AscentTerminal.iss     Inno Setup script — build the Windows installer
+
+server_launcher/
+  ascent_server.py       Thin wrapper — launches platform in a console window
+
+forward/
+  forward_paper.bat      Run paper-trade forward test
+  forward_paper.py       Forward test harness
+```
 
 ---
 
-## Build steps (do this on a Windows PC, once per release)
+## Prerequisites
 
-### 1 — Prerequisites
-```
-pip install pywebview pyinstaller
-```
-You also need **Inno Setup 6** installed: https://jrsoftware.org/isdl.php
-
-### 2 — Build the exe bundle
-```
-cd platform\desktop
-python build_desktop.py
-```
-Output: `platform\desktop\dist\AscentTerminal\` — a folder of files, not a
-single exe. (Single-file exe is ~3× slower to start and more likely to
-trigger SmartScreen.)
-
-### 3 — Compile the installer
-Open Inno Setup → File → Open → `installer\AscentTerminal.iss`
-Press **Compile** (F9). Output: `installer\Output\AscentTerminalSetup.exe`
-
-### 4 — Upload to the server
-```
-scp installer\Output\AscentTerminalSetup.exe root@<SERVER_IP>:/root/AscentTerminal/platform/static/dl/
-scp platform\desktop\dist\AscentTerminal.zip  root@<SERVER_IP>:/root/AscentTerminal/platform/static/dl/
-```
-(Zip the dist folder first if you want to offer the portable version too.)
-
-### 5 — Update the download page
-Get the SHA-256 of the installer:
-```
-certutil -hashfile installer\Output\AscentTerminalSetup.exe SHA256
-```
-Paste it into `platform/static/download.html` at the `data-sha256` attribute
-on the installer download button, then redeploy.
+- Python 3.11+ in PATH
+- `pip install -r platform/requirements.txt` already run
+- SSH key configured for your VPS (for DEPLOY_TO_VPS.bat)
+- `.env` file in `platform/` with all secrets filled in
 
 ---
 
-## SmartScreen / antivirus strategy
+## Quick start
 
-Unsigned executables from unknown publishers trigger Windows SmartScreen
-("Windows protected your PC"). Options, cheapest first:
-
-1. **Do nothing for now** — subscribers click "More info → Run anyway".
-   Fine for a small audience who trust you.
-2. **Self-sign** (free): creates a certificate that removes the prompt on
-   *your own machines* but not others.
-3. **EV code-signing certificate** (~£300/yr, DigiCert / Sectigo) — the
-   only option that removes SmartScreen for everyone from day one.
-4. **Reputation build** (free, takes ~weeks): Microsoft SmartScreen clears
-   the warning automatically once enough users have run the file without
-   reporting it. Submit via https://www.microsoft.com/en-us/wdsi/filesubmission
-   if it gets flagged as malware (it won't, but submit anyway to accelerate).
-
-Recommended path: ship unsigned for beta, get EV cert when revenue justifies
-it.
+1. Clone or unzip this repo
+2. `cd platform && pip install -r requirements.txt`
+3. `cp .env.example .env` then fill it in
+4. Run `tools\\GENERATE_SECRETS.bat` to generate a SECRET_KEY
+5. Double-click `tools\\RUN_TESTS.bat` to verify setup
+6. Double-click `server_launcher\\ascent_server.py` (or run via Python) to start locally
 
 ---
 
-## Local dev on your own PC (no build needed)
+## Building the Windows installer
 
-```
-# First time
-python server_launcher\ascent_server.py --setup
-
-# Every time after
-python server_launcher\ascent_server.py
-```
-
-This starts FastAPI on `http://localhost:8000` and opens a browser window.
-No Docker, no `.bat` files, no AV flags.
-
----
-
-## Updating the kit
-
-The `ascent_server.py` launcher reads `.env` from the platform folder — it
-picks up any `.env` changes automatically on the next launch. For a new
-release: re-run `build_desktop.py`, recompile the Inno Setup script (version
-number is in the `.iss` file under `AppVersion`), upload, update the SHA.
+1. Install [Inno Setup](https://jrsoftware.org/isinfo.php)
+2. Open `installer/AscentTerminal.iss` in Inno Setup
+3. Build → Output is `AscentTerminal-Setup-x.x.x.exe`
+4. Upload to `ascentterminal.com/dl/`
