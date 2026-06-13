@@ -1,0 +1,14 @@
+desktop/
+__pycache__/
+*.pyc
+.git
+*.md
+forward_*.json
+*.csv
+
+# Local environment / deploy files that must not be baked into the image
+.env
+docker-compose.yml
+Caddyfile
+Dockerfile
+.dockerignore

@@ -1,0 +1,40 @@
+# ═══════════════════════════════════════════════════════════════════
+#  Caddyfile.cloudflare — use this when the site sits behind Cloudflare
+#  (orange-cloud proxied DNS). Activate with:
+#      cp Caddyfile Caddyfile.direct        (keep the original)
+#      cp Caddyfile.cloudflare Caddyfile
+#      docker compose up -d --force-recreate
+#  Full steps: GO_LIVE_STEPS.md §11.
+#
+#  Why a special file:
+#  1. TLS — behind Cloudflare, Let's Encrypt renewals can silently fail.
+#     Instead we use a free Cloudflare ORIGIN CERTIFICATE (15-year
+#     lifetime, made for exactly this). Create it in the CF dashboard
+#     and save the two PEM blocks as:
+#         platform/certs/origin.pem        (the certificate)
+#         platform/certs/origin-key.pem    (the private key)
+#     Cloudflare SSL mode must be "Full (strict)".
+#  2. REAL CLIENT IPs — all traffic now arrives from Cloudflare edge
+#     IPs. trusted_proxies below tells Caddy to believe Cloudflare's
+#     X-Forwarded-For, so the app's per-IP security (brute-force
+#     lockout, rate limits) keeps seeing the actual visitor.
+#     Ranges: https://www.cloudflare.com/ips/ (stable for years;
+#     re-check yearly).
+# ═══════════════════════════════════════════════════════════════════
+
+{
+    servers {
+        trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+    }
+}
+
+{$DOMAIN} {
+    tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
+    encode zstd gzip
+    reverse_proxy web:8000
+}
+
+www.{$DOMAIN} {
+    tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
+    redir https://{$DOMAIN}{uri} permanent
+}

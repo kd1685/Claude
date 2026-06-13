@@ -1,0 +1,41 @@
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "8000"
+    volumes:
+      # subscriber keys: edit on the host with key_gen.py — the app
+      # hot-reloads this file, no restart needed
+      # alerts / execution log / bot state (SQLite) survive rebuilds
+      - ./data:/app/data
+    networks:
+      - webnet
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      # Cloudflare mode (GO_LIVE_STEPS.md §11): origin certificate files
+      - ./certs:/etc/caddy/certs
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+    networks:
+      - webnet
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  webnet:
