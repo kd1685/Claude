@@ -1,1 +1,95 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs>
+  <!-- main metal: lit from the top-left -->
+  <linearGradient id="auA" x1="0.1" y1="0" x2="0.9" y2="1">
+    <stop offset="0"    stop-color="#fdf6d8"/>
+    <stop offset="0.28" stop-color="#f0d489"/>
+    <stop offset="0.55" stop-color="#d4ab4f"/>
+    <stop offset="0.82" stop-color="#a87e26"/>
+    <stop offset="1"    stop-color="#6e5316"/>
+  </linearGradient>
+  <linearGradient id="auT" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0"    stop-color="#f6e6ae"/>
+    <stop offset="0.45" stop-color="#cfa64a"/>
+    <stop offset="0.8"  stop-color="#9a7322"/>
+    <stop offset="1"    stop-color="#634a13"/>
+  </linearGradient>
+  <!-- extrusion side-faces: deep bronze -->
+  <linearGradient id="auDeep" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#7a5a1e"/>
+    <stop offset="1" stop-color="#3c2c0c"/>
+  </linearGradient>
+  <!-- arrow: polished cream -->
+  <linearGradient id="auArrow" x1="0" y1="1" x2="1" y2="0">
+    <stop offset="0" stop-color="#eed896"/>
+    <stop offset="0.6" stop-color="#fbf0c6"/>
+    <stop offset="1" stop-color="#fffdf2"/>
+  </linearGradient>
+  <!-- diagonal sheen sweep, clipped to the glyphs -->
+  <linearGradient id="auSheen" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0"    stop-color="#ffffff" stop-opacity="0"/>
+    <stop offset="0.42" stop-color="#ffffff" stop-opacity="0"/>
+    <stop offset="0.5"  stop-color="#fffbe8" stop-opacity="0.38"/>
+    <stop offset="0.58" stop-color="#ffffff" stop-opacity="0"/>
+    <stop offset="1"    stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+  <filter id="auBlurXL" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="26"/></filter>
+  <filter id="auBlurS"  x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="7"/></filter>
+  <clipPath id="auGlyphs">
+    <path d="M470 238 H965 V322 H470 Z"/>
+    <path d="M804 322 H888 V692 H804 Z"/>
+    <path d="M400 75 L715 950 H609 L400 369 L191 950 H85 Z"/>
+    <path d="M281 700 H519 L550 786 H250 Z"/>
+  </clipPath>
+</defs>
+
+<!-- ambient glow underlay -->
+<g filter="url(#auBlurXL)" opacity="0.45">
+  <path d="M470 238 H965 V322 H470 Z M804 322 H888 V692 H804 Z" fill="#c79a31"/>
+  <path d="M400 75 L715 950 H609 L400 369 L191 950 H85 Z" fill="#d9b54a"/>
+  <path d="M281 700 H519 L550 786 H250 Z" fill="#d9b54a"/>
+</g>
+
+<!-- ═ T — extrusion depth, then face ═ -->
+<g transform="translate(15,12)">
+  <path d="M470 238 H965 V322 H470 Z" fill="url(#auDeep)"/>
+  <path d="M804 322 H888 V692 H804 Z" fill="url(#auDeep)"/>
+</g>
+<path d="M470 238 H965 V322 H470 Z" fill="url(#auT)"/>
+<path d="M804 322 H888 V692 H804 Z" fill="url(#auT)"/>
+<!-- T edge light: top of the bar + left of the stem -->
+<path d="M474 243 H960" stroke="#fff6d4" stroke-width="7" opacity="0.75" stroke-linecap="round"/>
+<path d="M808 326 V686" stroke="#fff0bd" stroke-width="5" opacity="0.4" stroke-linecap="round"/>
+<!-- T bottom shade lines (grounding) -->
+<path d="M474 318 H960" stroke="#4a370e" stroke-width="4" opacity="0.45"/>
+<path d="M884 326 V688" stroke="#4a370e" stroke-width="4" opacity="0.4"/>
+
+<!-- ═ A — extrusion depth, then face ═ -->
+<g transform="translate(16,13)">
+  <path d="M400 75 L715 950 H609 L400 369 L191 950 H85 Z" fill="url(#auDeep)"/>
+  <path d="M281 700 H519 L550 786 H250 Z" fill="url(#auDeep)"/>
+</g>
+<path d="M400 75 L715 950 H609 L400 369 L191 950 H85 Z" fill="url(#auA)"/>
+<path d="M281 700 H519 L550 786 H250 Z" fill="url(#auA)"/>
+
+<!-- A specular edges: bright along the lit (left/top) sides -->
+<path d="M398 96 L106 922" stroke="#fff8de" stroke-width="9" opacity="0.6" stroke-linecap="round"/>
+<path d="M408 100 L460 246" stroke="#fff8de" stroke-width="7" opacity="0.4" stroke-linecap="round"/>
+<path d="M286 706 H512" stroke="#fff3c8" stroke-width="6" opacity="0.5" stroke-linecap="round"/>
+<!-- A shaded inner (right) edges -->
+<path d="M404 380 L600 930" stroke="#4a370e" stroke-width="6" opacity="0.4" stroke-linecap="round"/>
+<path d="M258 778 H540" stroke="#4a370e" stroke-width="5" opacity="0.4"/>
+
+<!-- diagonal sheen sweep across both glyphs -->
+<rect x="0" y="0" width="1024" height="1024" fill="url(#auSheen)" clip-path="url(#auGlyphs)"/>
+
+<!-- ═ ascent arrow in the counter ═ -->
+<g filter="url(#auBlurS)" opacity="0.65">
+  <path d="M300 648 L368 572 L404 606 L458 518" stroke="#f7e7b4" stroke-width="30" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<path d="M300 648 L368 572 L404 606 L458 518" stroke="url(#auArrow)" stroke-width="23"
+      fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M481 478 L411 489 L452 545 Z" fill="url(#auArrow)"/>
+<!-- arrow underside shade for lift -->
+<path d="M305 655 L370 583" stroke="#7a5a1e" stroke-width="6" opacity="0.35" stroke-linecap="round"/>
+</svg>
