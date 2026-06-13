@@ -55,13 +55,11 @@ def main() -> None:
     )
     api_key = args.api_key or os.getenv("ASCENT_API_KEY") or cfg.get("api_key", "")
 
-    # Persist for next launch
     cfg.update({"url": url})
     if api_key:
         cfg["api_key"] = api_key
     _save_config(cfg)
 
-    # Append API key as query param so the web app can auto-authenticate
     if api_key and "?" not in url:
         url = f"{url}?api_key={api_key}"
 
@@ -73,7 +71,7 @@ def main() -> None:
         resizable=True,
         min_size=(800, 600),
     )
-    webview.start(debug=False)
+    webview.start(debug=False, gui="edgechromium")
 
 
 if __name__ == "__main__":

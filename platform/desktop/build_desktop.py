@@ -18,11 +18,15 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=['webview', 'webview.platforms.gtk', 'webview.platforms.winforms'],
+    hiddenimports=[
+        'webview',
+        'webview.platforms.edgechromium',
+        'clr_loader',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['webview.platforms.winforms', 'webview.platforms.gtk'],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
