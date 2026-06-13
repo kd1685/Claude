@@ -1,49 +1,105 @@
 # ✅ WHAT TO DO NOW — owner runbook (post-upgrade)
 
 Everything in the platform is built and tested. These are YOUR steps, in order.
-Most take minutes. The only slow one is #8 (the scalper backtest you asked about).
+Most take minutes. The only slow one is #8 (the scalper backtest you planned).
 
-────────────────────────────────────────────────────────
-TODAY (30–45 min)
-────────────────────────────────────────────────────────
+---
 
-1. DEPLOY THE UPDATE
-   ▶ Windows: open a terminal in this folder, run:  UPDATE.bat
-   ▶ It rsyncs the code to the VPS, skips .env / keys.json / data/
-   ▶ Then SSH in and:  pip install -r requirements.txt
-                       sudo systemctl restart ascent
+## 1. Lock in the new name (15 min — do this TODAY, names get sniped)
+- ✅ DONE: name is **Ascent Terminal**, @AscentTerminal secured on X,
+  app + brand pack + docs fully rebranded (gold AT monogram kept).
+- Register **ascentterminal.com** (full name — don't drop letters) and
+  grab the remaining handles (Instagram / Discord / TikTok / YouTube).
+- Point DEPLOY at the new domain when you set it up.
 
-2. VERIFY THE WEBSITE
-   ▶ https://ascentterminal.com  — no JS errors
-   ▶ /download  — button works, file downloads
-   ▶ /pricing   — tiers correct
-   ▶ Log in as test user — dashboard loads
+---
 
-3. SMOKE-TEST THE SCALPER
-   ▶ On VPS:  cd /opt/ascent/brain && python edge_lab.py --dry-run
-   ▶ Should exit 0 with a signal summary, no tracebacks
+## 2. Install the two data/trading libraries (1 min)
+```cmd
+pip install ccxt yfinance
+```
+Without these: no live exchange data for top-traded views / scalper bot /
+execution, and no forex/stocks/indices data.
 
-4. (OPTIONAL) FULL BACKTEST — only if you changed strategy params
-   ▶ Windows: double-click  brain/RUN_EDGE_LAB.bat
-   ▶ Results in brain/edge_results.csv  (Sharpe should be > 1)
+---
 
-────────────────────────────────────────────────────────
-TOMORROW (15 min)
-────────────────────────────────────────────────────────
+## 3. Run it locally and click through everything (10 min)
+```cmd
+cd platform
+run_local.bat
+```
+Open http://localhost:8000 → unlock with **DEMO-KEY**, then check:
+- Asset dropdown: market-type pills, search, TOP TRADED / GAINERS / LOSERS
+- Tabs: CHART | SIGNALS (panel + trend + positioning + 🧪 backtest) |
+  ALERTS (⚡ execute) | BOTS (trend + scalper sections)
+- Anything that feels off in real use → tell me, that's the next fix.
 
-5. SWITCH STRIPE TO LIVE
-   ▶ Stripe dashboard → Developers → API keys → copy sk_live_…
-   ▶ Edit VPS .env:  STRIPE_SECRET_KEY=sk_live_…
-   ▶ Also update:    STRIPE_WEBHOOK_SECRET=whsec_…  (live endpoint)
-   ▶ sudo systemctl restart ascent
-   ▶ Do one real £1 test purchase
+---
 
-────────────────────────────────────────────────────────
-NOT YOUR JOB (already done)
-────────────────────────────────────────────────────────
+## 4. Set up your real keys (5 min) — NEW SYSTEM, no restarts needed
+```cmd
+cd platform
+python key_gen.py new --tier observer  --note "test obs"
+python key_gen.py new --tier operator  --note "test opr"
+python key_gen.py new --tier architect --note "me"
+python key_gen.py list
+```
+- Each key is shown ONCE (only hashes are stored) — copy it immediately.
+- Keys work/revoke LIVE (server re-reads keys.json — no restart).
+- Tiers: observer = signals/charts/analysis · operator = + backtest +
+  execution · architect = + bots. Map these to your Whop/Patreon prices.
+- Test: unlock with the observer key → BOTS tab should refuse (403-style
+  message), architect key → everything opens.
+- Subscriber pays → `new`. Cancels → `revoke --key <key>`. That's the loop.
 
-  ✓ Scalper bot rewritten (ATR sizing, fees, Redis heartbeat, Prometheus)
-  ✓ Edge lab upgraded (parallel walk-forward, regime filter, HTML report)
-  ✓ MEXC trend bot hardened (Kelly sizing, drawdown breaker, reconciliation)
-  ✓ Website download page wired to real binary
-  ✓ UPDATE.bat and organise.bat written
+## 5. Set your production env (.env from .env.example) (5 min)
+- `ACCESS_KEYS=` → set EMPTY or your own private key. **Remove DEMO-KEY
+  before anything is public** (env keys = architect tier).
+- `TV_WEBHOOK_SECRET=` → long random string (protects the alert receiver).
+- `EXECUTE_KEY=` → long random string. This arms execution + bots.
+  Leave it EMPTY until you actually want order placement possible.
+- `EXEC_LIVE=false` stays false until you've paper-tested. `EXEC_MAX_USD`
+  is your per-order safety cap (default 1000).
+- `DISCORD_WEBHOOK_URL=` if you want signal posts in Discord.
+- `ANTHROPIC_API_KEY=` (console.anthropic.com) → enables the 🧠 Claude's
+  read panel on the Signals tab. Cached 15 min/asset to keep cost low.
+
+---
+
+## 6. Wire TradingView (optional, 10 min)
+TradingView alert → webhook URL `https://<your-domain>/api/tv-webhook`,
+message JSON like:
+`{"symbol":"BTC_USDT","action":"BUY","price":65000,"tp":68000,"sl":63000,"secret":"<TV_WEBHOOK_SECRET>"}`
+→ appears in the ALERTS tab with TP/SL lines on the chart + ⚡ Execute button.
+
+## 7. Deploy (30 min) — follow `platform/DEPLOY.md`
+VPS + Caddy (auto-HTTPS) + your new domain. Then repeat step 3 on the
+live URL. Brute-force lockout, hashed keys and tiers are all already on.
+
+---
+
+## 8. YOUR PLAN: backtest the scalper before trusting it
+The 26/7-indicator scalper has NO validated edge yet. It now HAS a LIVE
+mode (behind every bridge gate + a warning), but the smart order is:
+1. Signals tab → ⚙ pick your indicator config → 🧪 RUN BACKTEST
+   (fees included, no lookahead, benchmarked vs EMA30 + buy&hold).
+2. Try several configs/windows/symbols. Expect most to LOSE to the
+   EMA30 baseline after fees — that's the honest result we've seen.
+3. Whatever survives → BOTS tab → Scalper → START PAPER and let it
+   forward-test for weeks.
+4. Only flip its Mode to LIVE once the evidence earns it — your call,
+   your risk, the warnings will remind you.
+
+## 9. Business checklist (when ready to sell)
+- Whop/Patreon products → one per tier (prompts in `whop_patreon/`).
+- Discord role sync: put your real Whop plan IDs in
+  `discord/discord_role_sync.py` (marked TODO).
+- Keep `forward/forward_paper.bat` running daily — that's your live
+  track record for the proof panel.
+- Optional: independent legal review of the documents whenever convenient (review pack: AscentTerminal_legal_for_review.pdf).
+  taking money. Non-negotiable.
+
+---
+
+Stuck on any step → bring me the error/screenshot and I'll fix it.
+Next session: send the chosen name + graphics for the rebrand.

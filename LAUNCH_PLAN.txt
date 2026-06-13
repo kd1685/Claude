@@ -1,64 +1,126 @@
 ════════════════════════════════════════════════════════════════════
  ASCENT TERMINAL — LAUNCH PLAN (do these in order, top to bottom)
 ════════════════════════════════════════════════════════════════════
+Everything is built. This is the exact sequence from "zip on my PC"
+to "live website taking subscribers". Times are realistic.
+Detailed copy-paste server commands live in platform/DEPLOY.md —
+this file tells you WHEN to use it and exactly WHAT to fill in.
 
-Everything below is YOUR action. Each box is a checkbox.
-Estimated total time: 45–90 minutes (excluding Stripe which is tomorrow).
+──────────────────────────────────────────────────────────────────
+ PHASE 1 — LOCAL (today, ~20 min)
+──────────────────────────────────────────────────────────────────
+1. UPDATE & TEST LOCALLY
+   • Extract AscentTerminal.zip somewhere permanent.
+   • Double-click UPDATE.bat → it migrates your old .env / keys /
+     data, installs everything (incl. ccxt + yfinance), and offers
+     to launch.
+   • In the browser (http://localhost:8000): unlock with DEMO-KEY,
+     click through CHART / SIGNALS / ALERTS / BOTS / PROOF, open the
+     asset picker (SPOT and PERPS), run a backtest. Anything feels
+     wrong → screenshot it for me.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PHASE 1 — DEPLOY THE CODE (today)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. CREATE YOUR REAL KEYS (platform folder, command prompt):
+       python key_gen.py new --tier architect --note "owner"
+       python key_gen.py new --tier observer  --note "test obs"
+       python key_gen.py new --tier operator  --note "test opr"
+   Copy each key when shown — they're stored hashed and can't be
+   recovered. Test each tier in the UI (observer must NOT open BOTS).
 
-[ ] 1. Run UPDATE.bat from inside this folder.
-       - Rsyncs code to VPS, skips .env / keys.json / data/
-       - Takes ~2 minutes on a normal connection
+3. WRITE YOUR PRODUCTION .env  (copy .env.example → .env, set):
+       ACCESS_KEYS=                ← EMPTY. Kills DEMO-KEY. Real keys
+                                     live in keys.json now.
+       TV_WEBHOOK_SECRET=<long random string #1>
+       EXECUTE_KEY=<long random string #2>   (or leave empty until
+                                     you want execution/bots armed)
+       EXEC_LIVE=false             ← stays false until paper-tested
+       EXEC_MAX_USD=1000
+       AUTO_EXECUTE=false
+       DISCORD_WEBHOOK_URL=        (optional, signal posts)
+       ANTHROPIC_API_KEY=          (optional, enables Claude's read —
+                                     get one at console.anthropic.com)
+   Random strings: use a password manager's generator, 30+ chars.
 
-[ ] 2. SSH to VPS and install new dependencies:
-       ssh user@<vps-ip>
-       cd /opt/ascent && source venv/bin/activate
-       pip install -r requirements.txt
+──────────────────────────────────────────────────────────────────
+ PHASE 2 — DOMAIN + VPS (today, ~30 min + DNS wait)
+──────────────────────────────────────────────────────────────────
+4. REGISTER THE DOMAIN
+   • Buy  ascentterminal.com  (full spelling) at Cloudflare,
+     Namecheap or Porkbun (~£8–10/yr).
+   • While you're at it: secure the remaining handles —
+     Instagram / Discord / TikTok / YouTube @AscentTerminal.
 
-[ ] 3. Restart the platform service:
-       sudo systemctl restart ascent
-       sudo systemctl status  ascent   ← must say "active (running)"
+5. RENT A VPS (~£4–6/month)
+   • Hetzner (CX22) or DigitalOcean (Basic 1–2 GB) → create an
+     **Ubuntu 24.04** server. 1 GB RAM is enough; 2 GB is comfy.
+   • Note the server's public IP and set a strong root password /
+     SSH key when prompted.
 
-[ ] 4. If you run the scalper as a separate service:
-       sudo systemctl restart ascent-scalper
+6. POINT DNS AT THE SERVER (registrar's DNS panel):
+       Type A    Host @      Value <YOUR_SERVER_IP>
+       Type A    Host www    Value <YOUR_SERVER_IP>
+   Propagation: minutes to ~1 hour. Continue meanwhile.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PHASE 2 — VERIFY (today, 10 min)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+──────────────────────────────────────────────────────────────────
+ PHASE 3 — DEPLOY THE WEBSITE/APP (~30–45 min)
+──────────────────────────────────────────────────────────────────
+7. FOLLOW platform/DEPLOY.md, Steps 2 → 8. It is copy-paste:
+     Step 2  ssh root@<YOUR_SERVER_IP>
+     Step 3  install Docker (one command block)
+     Step 4  open firewall ports 80 + 443
+     Step 5  upload the AscentTerminal folder (scp command given)
+     Step 6  settings file → the SAME .env values from item 3,
+             PLUS  DOMAIN=ascentterminal.com  (Caddy reads it from
+             .env and fetches the HTTPS certificate automatically).
+     Step 7  docker compose up -d   (builds + starts app & Caddy;
+             Caddy fetches the free HTTPS certificate itself)
+     Step 8  verify
+   keys.json + data/ are mounted OUTSIDE the container, so: upload
+   your local keys.json (same scp pattern) or just generate fresh
+   keys ON THE SERVER (DEPLOY.md shows how) — either way new keys /
+   revocations go live instantly, no restart.
 
-[ ] 5. Open https://ascentterminal.com — no JS errors in console
-[ ] 6. /download page — download button works, file actually lands
-[ ] 7. /pricing page — tiers display correctly
-[ ] 8. Log in as a test user — dashboard loads without errors
+8. GO-LIVE CHECKS at https://ascentterminal.com :
+   □ padlock shows (HTTPS) □ PROOF tab populates after ~30s
+   □ DEMO-KEY REJECTED □ your architect key unlocks everything
+   □ observer key blocked from BOTS □ asset picker + perps work
+   □ wrong key 10× → locked out (the brute-force shield)
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PHASE 3 — STRIPE LIVE (tomorrow)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+9. CONNECT TRADINGVIEW (optional now, 10 min)
+   Alert → Webhook URL:  https://ascentterminal.com/api/tv-webhook
+   Message:
+   {"symbol":"{{ticker}}","action":"BUY","price":{{close}},
+    "tp":0,"sl":0,"secret":"<TV_WEBHOOK_SECRET>"}
+   → lands in the ALERTS tab with TP/SL lines + ⚡ Execute.
 
-[ ] 9.  Stripe dashboard → Developers → API keys → copy sk_live_…
-[ ] 10. Edit VPS .env: replace sk_test_… with sk_live_…
-[ ] 11. Update STRIPE_WEBHOOK_SECRET with live signing secret
-[ ] 12. sudo systemctl restart ascent
-[ ] 13. Do one real £1 test purchase end-to-end
+──────────────────────────────────────────────────────────────────
+ PHASE 4 — OPEN FOR BUSINESS (this week)
+──────────────────────────────────────────────────────────────────
+10. MONETISATION
+   • Whop and/or Patreon: one product per tier —
+       Observer  = signals, charts, indicator panel, Claude's read
+       Operator  = + Strategy Lab backtests + execution bridge
+       Architect = + the bots
+     (ready-made listing copy: whop_patreon/ folder)
+   • Flow per sale: key_gen.py new --tier <their tier> --days 31
+     → DM them the key. Cancel → revoke. Live instantly.
+   • Discord: upload brand/discord-server-icon-512.png + banner;
+     put your real Whop plan IDs in discord/discord_role_sync.py.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PHASE 4 — BOTS & EDGE LAB (today or tomorrow)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Optional: independent legal review of the documents whenever convenient (review pack: AscentTerminal_legal_for_review.pdf).
+    BEFORE taking money. Non-negotiable.
 
-[ ] 14. Run edge lab dry-run on VPS:
-        cd /opt/ascent/brain && python edge_lab.py --dry-run
+12. YOUR RESEARCH PLAN — backtest the 26/7 scalper (Signals tab →
+    🧪), forward paper-test survivors on the BOTS tab for weeks,
+    and only then consider its LIVE mode. The validated EMA30 edge
+    is the product today; the scalper is the lab.
 
-[ ] 15. (Optional) full backtest on Windows:
-        Double-click brain/RUN_EDGE_LAB.bat
-        Confirm Sharpe > 1 in brain/edge_results.csv
+──────────────────────────────────────────────────────────────────
+ ONGOING
+──────────────────────────────────────────────────────────────────
+• Update the live server later:  scp the changed files up, then
+  `docker compose up -d --build` (DEPLOY.md "Updating" section).
+• Keep forward/forward_paper running daily — your live track record.
+• Watch EXEC settings: EXECUTE_KEY empty = nothing can ever trade.
 
-[ ] 16. Monitor scalper heartbeat:
-        curl http://localhost:8001/health
-        Expected: {"status": "ok"}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- ALL BOXES TICKED = YOU ARE LIVE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Stuck anywhere → screenshot/paste the error to me and I'll fix it.
+════════════════════════════════════════════════════════════════════
